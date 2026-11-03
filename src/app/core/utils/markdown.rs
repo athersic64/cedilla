@@ -42,6 +42,14 @@ pub enum SelectionAction {
     CheckboxList,
     /// Add horizontal rule
     Rule,
+    /// Convert selection to strikethrough / Insert strikethrough markers
+    Strikethrough,
+    /// Convert selection to blockquote / Insert blockquote marker
+    Quote,
+    /// Convert selection to collapsible details / Insert details block
+    ToggleDetails,
+    /// Insert a markdown table with given rows and columns
+    InsertTable { rows: usize, cols: usize },
 }
 
 impl SelectionAction {
@@ -51,6 +59,7 @@ impl SelectionAction {
             SelectionAction::BulletedList
                 | SelectionAction::NumberedList
                 | SelectionAction::CheckboxList
+                | SelectionAction::Quote
         )
     }
 }
@@ -238,7 +247,76 @@ fn format_selected_text(selected_text: &str, action: SelectionAction) -> String 
         }
 
         SelectionAction::Rule => "---".to_string(),
+
+        SelectionAction::Strikethrough => {
+            if is_empty {
+                "~~~~".to_string()
+            } else if selected_text.starts_with("~~")
+                && selected_text.ends_with("~~")
+                && selected_text.len() >= 4
+            {
+                selected_text[2..selected_text.len() - 2].to_string()
+            } else {
+                format!("~~{selected_text}~~")
+            }
+        }
+
+        SelectionAction::Quote => {
+            if is_empty {
+                "> ".to_string()
+            } else {
+                selected_text
+                    .lines()
+                    .map(|l| format!("> {l}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+        }
+
+        SelectionAction::ToggleDetails => {
+            if is_empty {
+                "<details>\n<summary>Toggle Title</summary>\n\nHidden content\n</details>\n".to_string()
+            } else {
+                format!("<details>\n<summary>Details</summary>\n\n{selected_text}\n</details>\n")
+            }
+        }
+
+        SelectionAction::InsertTable { rows, cols } => {
+            generate_markdown_table(rows, cols)
+        }
     }
+}
+
+/// Generates a clean Markdown table with `rows` body rows and `cols` columns.
+pub fn generate_markdown_table(rows: usize, cols: usize) -> String {
+    let rows = rows.max(1);
+    let cols = cols.max(1);
+    let mut out = String::new();
+
+    // Headers
+    out.push('|');
+    for c in 1..=cols {
+        out.push_str(&format!(" Header {c} |"));
+    }
+    out.push('\n');
+
+    // Separators
+    out.push('|');
+    for _ in 1..=cols {
+        out.push_str(" :--- |");
+    }
+    out.push('\n');
+
+    // Data rows
+    for r in 1..=rows {
+        out.push('|');
+        for c in 1..=cols {
+            out.push_str(&format!(" Cell {r},{c} |"));
+        }
+        out.push('\n');
+    }
+
+    out
 }
 
 fn toggle_heading(text: &str, level: usize) -> String {
@@ -417,3 +495,53 @@ fn current_list_number(line: &str) -> Option<usize> {
     let dot_pos = line.find(". ")?;
     line[..dot_pos].parse().ok()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_markdown_table() {
+        let table = generate_markdown_table(2, 3);
+        assert!(table.contains("| Header 1 | Header 2 | Header 3 |"));
+        assert!(table.contains("| :--- | :--- | :--- |"));
+        assert!(table.contains("| Cell 1,1 | Cell 1,2 | Cell 1,3 |"));
+        assert!(table.contains("| Cell 2,1 | Cell 2,2 | Cell 2,3 |"));
+    }
+
+    #[test]
+    fn test_strikethrough_formatting() {
+        assert_eq!(format_selected_text("", SelectionAction::Strikethrough), "~~~~");
+        assert_eq!(format_selected_text("hello", SelectionAction::Strikethrough), "~~hello~~");
+        assert_eq!(format_selected_text("~~hello~~", SelectionAction::Strikethrough), "hello");
+    }
+
+    #[test]
+    fn test_quote_formatting() {
+        assert_eq!(format_selected_text("", SelectionAction::Quote), "> ");
+        assert_eq!(format_selected_text("line1\nline2", SelectionAction::Quote), "> line1\n> line2");
+    }
+
+    #[test]
+    fn test_toggle_details_formatting() {
+        let empty_details = format_selected_text("", SelectionAction::ToggleDetails);
+        assert!(empty_details.contains("<details>"));
+        assert!(empty_details.contains("<summary>Toggle Title</summary>"));
+        assert!(empty_details.contains("</details>"));
+
+        let filled_details = format_selected_text("My text", SelectionAction::ToggleDetails);
+        assert!(filled_details.contains("<details>"));
+        assert!(filled_details.contains("<summary>Details</summary>"));
+        assert!(filled_details.contains("My text"));
+        assert!(filled_details.contains("</details>"));
+    }
+
+    #[test]
+    fn test_headings_formatting() {
+        assert_eq!(format_selected_text("Title", SelectionAction::Heading1), "# Title");
+        assert_eq!(format_selected_text("# Title", SelectionAction::Heading1), "Title");
+        assert_eq!(format_selected_text("Title", SelectionAction::Heading2), "## Title");
+        assert_eq!(format_selected_text("Title", SelectionAction::Heading3), "### Title");
+    }
+}
+

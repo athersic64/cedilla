@@ -382,7 +382,11 @@ impl cosmic::Application for AppModel {
 
     /// Elements to pack at the start of the header bar.
     fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
-        vec![app_menu::menu_bar(&self.key_binds)]
+        vec![app_menu::menu_bar(
+            &self.key_binds,
+            &self.config.recent_files,
+            &self.config.recent_workspaces,
+        )]
     }
 
     /// Elements to pack at the end of the header bar.
@@ -810,6 +814,7 @@ impl AppModel {
     pub fn handle_open_workspace_folder(&mut self, path: PathBuf) -> Task<cosmic::Action<Message>> {
         if path.is_dir() {
             let canonical_path = crate::app::core::project::canonical(&path);
+            self.config.add_recent_workspace(canonical_path.clone());
             self.expanded_folders.insert(canonical_path.clone());
             self.workspace_root = Some(canonical_path);
             self.selected_nav_path = self.workspace_root.clone();
@@ -1040,6 +1045,17 @@ impl AppModel {
                         },
                     )),
                 )
+                .add(
+                    widget::settings::item::builder(fl!("line-numbers")).control(widget::dropdown(
+                        ShowState::all_labels(),
+                        Some(self.config.show_line_numbers.to_index()),
+                        |index| {
+                            Message::ConfigInput(ConfigInput::LineNumbersShowState(
+                                ShowState::from_index(index),
+                            ))
+                        },
+                    )),
+                )
                 .into(),
         ])
         .into()
@@ -1091,6 +1107,7 @@ fn cedilla_main_view<'a>(
                         |highlight, _theme| highlight.to_format(),
                     )
                     .key_binding(text_editor_key_bindings)
+                    .show_line_numbers(matches!(app_config.show_line_numbers, ShowState::Show))
                     .size(app_config.text_size)
                     .font(font)
                     .padding(0)
@@ -1270,11 +1287,20 @@ fn cedilla_main_view<'a>(
     let helper_header_bar = {
         container(
             row![
+                button::text("H1")
+                    .on_press(Message::ApplyFormatting(utils::SelectionAction::Heading1)),
+                button::text("H2")
+                    .on_press(Message::ApplyFormatting(utils::SelectionAction::Heading2)),
+                button::text("H3")
+                    .on_press(Message::ApplyFormatting(utils::SelectionAction::Heading3)),
+                horizontal().width(12.),
                 button::icon(icons::get_handle("helperbar/bold-symbolic", 18))
                     .on_press(Message::ApplyFormatting(utils::SelectionAction::Bold)),
                 button::icon(icons::get_handle("helperbar/italic-symbolic", 18))
                     .on_press(Message::ApplyFormatting(utils::SelectionAction::Italic)),
-                horizontal().width(18.),
+                button::text("~S~")
+                    .on_press(Message::ApplyFormatting(utils::SelectionAction::Strikethrough)),
+                horizontal().width(12.),
                 button::icon(icons::get_handle("helperbar/link-symbolic", 18))
                     .on_press(Message::ApplyFormatting(utils::SelectionAction::Hyperlink)),
                 button::icon(icons::get_handle("helperbar/code-symbolic", 18))
@@ -1283,7 +1309,13 @@ fn cedilla_main_view<'a>(
                     .on_press(Message::ApplyFormatting(utils::SelectionAction::Math)),
                 button::icon(icons::get_handle("helperbar/image-symbolic", 18))
                     .on_press(Message::ApplyFormatting(utils::SelectionAction::Image)),
-                horizontal().width(18.),
+                button::text("“ ”")
+                    .on_press(Message::ApplyFormatting(utils::SelectionAction::Quote)),
+                button::text("▼ Details")
+                    .on_press(Message::ApplyFormatting(utils::SelectionAction::ToggleDetails)),
+                button::text("⊞ Table")
+                    .on_press(Message::DialogAction(dialogs::DialogAction::OpenInsertTableDialog)),
+                horizontal().width(12.),
                 button::icon(icons::get_handle("helperbar/bulleted-list-symbolic", 18)).on_press(
                     Message::ApplyFormatting(utils::SelectionAction::BulletedList)
                 ),
@@ -1293,8 +1325,6 @@ fn cedilla_main_view<'a>(
                 button::icon(icons::get_handle("helperbar/checked-list-symbolic", 18)).on_press(
                     Message::ApplyFormatting(utils::SelectionAction::CheckboxList)
                 ),
-                button::icon(icons::get_handle("helperbar/heading-symbolic", 18))
-                    .on_press(Message::ApplyFormatting(utils::SelectionAction::Heading1)),
                 button::icon(icons::get_handle("helperbar/rule-symbolic", 18))
                     .on_press(Message::ApplyFormatting(utils::SelectionAction::Rule)),
                 horizontal(),

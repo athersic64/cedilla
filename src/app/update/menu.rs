@@ -66,11 +66,61 @@ impl AppModel {
                 }
                 Task::none()
             }
+            MenuAction::ToggleLineNumbers => {
+                let next = match self.config.show_line_numbers {
+                    crate::config::ShowState::Show => crate::config::ShowState::Hide,
+                    crate::config::ShowState::Hide => crate::config::ShowState::Show,
+                };
+                self.handle_config_input(crate::config::ConfigInput::LineNumbersShowState(next))
+            }
             MenuAction::Undo => self.handle_undo(),
             MenuAction::Redo => self.handle_redo(),
             MenuAction::PasteImage => self.handle_paste_image(),
             MenuAction::Search => self.handle_search(utils::search::SearchAction::ToggleSearch),
             MenuAction::CloseCurrentDialog => self.handle_dialog_action(dialogs::DialogAction::DialogCancel),
+            MenuAction::OpenRecentFile(index) => {
+                if let Some(path) = self.config.recent_files.get(index).cloned() {
+                    if path.exists() {
+                        return Task::perform(
+                            utils::files::load_file(path),
+                            |res| cosmic::action::app(Message::OpenFile(res)),
+                        );
+                    } else {
+                        self.config.recent_files.retain(|p| p != &path);
+                        if let Some(handler) = crate::config::CedillaConfig::config_handler() {
+                            let _ = self.config.set_recent_files(&handler, self.config.recent_files.clone());
+                        }
+                    }
+                }
+                Task::none()
+            }
+            MenuAction::OpenRecentWorkspace(index) => {
+                if let Some(path) = self.config.recent_workspaces.get(index).cloned() {
+                    if path.exists() {
+                        return self.handle_open_workspace_folder(path);
+                    } else {
+                        self.config.recent_workspaces.retain(|p| p != &path);
+                        if let Some(handler) = crate::config::CedillaConfig::config_handler() {
+                            let _ = self.config.set_recent_workspaces(&handler, self.config.recent_workspaces.clone());
+                        }
+                    }
+                }
+                Task::none()
+            }
+            MenuAction::ClearRecentFiles => {
+                self.config.recent_files.clear();
+                if let Some(handler) = crate::config::CedillaConfig::config_handler() {
+                    let _ = self.config.set_recent_files(&handler, Vec::new());
+                }
+                Task::none()
+            }
+            MenuAction::ClearRecentWorkspaces => {
+                self.config.recent_workspaces.clear();
+                if let Some(handler) = crate::config::CedillaConfig::config_handler() {
+                    let _ = self.config.set_recent_workspaces(&handler, Vec::new());
+                }
+                Task::none()
+            }
         }
     }
 }

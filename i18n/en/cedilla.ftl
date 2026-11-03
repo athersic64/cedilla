@@ -44,6 +44,7 @@ light-highlighter = Light Highlighter Theme
 general = General
 help-bar = Editor Help Bar
 status-bar = Status Bar
+line-numbers = Line Numbers
 move-vault = Move Vault
 current-location = Current Location:
 show = Show
@@ -70,6 +71,11 @@ new-vault-file = New Vault File
 new-folder = New Folder
 open-file = Open File
 open-folder = Open Folder
+open-recent-files = Recent Files
+open-recent-workspaces = Recent Workspaces
+no-recent-files = No Recent Files
+no-recent-workspaces = No Recent Workspaces
+clear-recent = Clear List
 save-file = Save File
 new-file = New File
 
@@ -83,6 +89,7 @@ image-pasted = Image saved: { $name }
 view = View
 toggle-preview = Toggle Preview
 toggle-editor = Toggle Editor
+toggle-line-numbers = Toggle Line Numbers
 about = About
 settings = Settings
 
@@ -101,3 +108,7 @@ horizontal-rule = Horizontal Rule
 <#-- Search -->
 search = Search
 no-results = No Results
+
+<#-- Table Dialog -->
+insert-table = Insert Table
+insert = Insert

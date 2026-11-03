@@ -248,6 +248,7 @@ impl AppModel {
         match result {
             Ok((path, content)) => {
                 let path = canonical(&path);
+                self.config.add_recent_file(path.clone());
 
                 let workspace_root = canonical(&self.active_workspace_path());
                 if !path.starts_with(&workspace_root) {
@@ -337,6 +338,7 @@ impl AppModel {
                     let was_new_file = editor.path.is_none();
                     editor.path = Some(new_path.clone());
                     editor.is_dirty = false;
+                    self.config.add_recent_file(new_path.clone());
 
                     // a new file saved inside the vault should show up in the navbar
                     if was_new_file {

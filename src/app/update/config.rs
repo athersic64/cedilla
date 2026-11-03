@@ -66,6 +66,16 @@ impl AppModel {
                 }
                 Ok(())
             }),
+            ConfigInput::LineNumbersShowState(show_state) => self.apply_config(|config, handler| {
+                if let Some(h) = handler {
+                    config
+                        .set_show_line_numbers(h, show_state)
+                        .map_err(|e| e.to_string())?;
+                } else {
+                    config.show_line_numbers = show_state;
+                }
+                Ok(())
+            }),
             ConfigInput::OpenLastFile(state) => self.apply_config(|config, handler| {
                 if let Some(h) = handler {
                     config

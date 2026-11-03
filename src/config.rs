@@ -20,6 +20,7 @@ pub struct CedillaConfig {
     pub vault_path: String,
     pub show_helper_header_bar: ShowState,
     pub show_status_bar: ShowState,
+    pub show_line_numbers: ShowState,
     pub last_navbar_showstate: ShowState,
     pub last_preview_showstate: ShowState,
     pub open_last_file: BoolState,
@@ -30,6 +31,8 @@ pub struct CedillaConfig {
     pub light_highlighter_theme: CedillaHighlighterTheme,
     pub dark_highlighter_theme: CedillaHighlighterTheme,
     pub selected_font_family: Option<String>,
+    pub recent_files: Vec<PathBuf>,
+    pub recent_workspaces: Vec<PathBuf>,
 }
 
 impl Default for CedillaConfig {
@@ -48,6 +51,7 @@ impl Default for CedillaConfig {
             vault_path: vault_path.to_string_lossy().to_string(),
             show_helper_header_bar: ShowState::default(),
             show_status_bar: ShowState::default(),
+            show_line_numbers: ShowState::default(),
             last_navbar_showstate: ShowState::default(),
             last_preview_showstate: ShowState::default(),
             open_last_file: BoolState::default(),
@@ -62,6 +66,8 @@ impl Default for CedillaConfig {
                 cosmic::iced::highlighter::Theme::Base16Ocean,
             ),
             selected_font_family: None,
+            recent_files: Vec::new(),
+            recent_workspaces: Vec::new(),
         }
     }
 }
@@ -80,6 +86,32 @@ impl CedillaConfig {
                 })
             }
             None => CedillaConfig::default(),
+        }
+    }
+
+    /// Adds a file path to recent files list (persisted in config).
+    pub fn add_recent_file(&mut self, path: PathBuf) {
+        let canon = std::fs::canonicalize(&path).unwrap_or(path);
+        self.recent_files.retain(|p| p != &canon);
+        self.recent_files.insert(0, canon);
+        if self.recent_files.len() > 10 {
+            self.recent_files.truncate(10);
+        }
+        if let Some(handler) = Self::config_handler() {
+            let _ = self.set_recent_files(&handler, self.recent_files.clone());
+        }
+    }
+
+    /// Adds a workspace directory path to recent workspaces list (persisted in config).
+    pub fn add_recent_workspace(&mut self, path: PathBuf) {
+        let canon = std::fs::canonicalize(&path).unwrap_or(path);
+        self.recent_workspaces.retain(|p| p != &canon);
+        self.recent_workspaces.insert(0, canon);
+        if self.recent_workspaces.len() > 10 {
+            self.recent_workspaces.truncate(10);
+        }
+        if let Some(handler) = Self::config_handler() {
+            let _ = self.set_recent_workspaces(&handler, self.recent_workspaces.clone());
         }
     }
 
@@ -237,6 +269,8 @@ pub enum ConfigInput {
     HelperHeaderBarShowState(ShowState),
     /// Update the status bar show state
     StatusBarShowState(ShowState),
+    /// Update the line numbers show state
+    LineNumbersShowState(ShowState),
     /// Update if the user wants to open last opened file or not
     OpenLastFile(BoolState),
     /// Update if the user wants the editor and preview scrollbars to be in sync

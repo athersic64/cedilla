@@ -2,7 +2,7 @@
 
 use std::{collections::VecDeque, path::PathBuf};
 
-use cosmic::{Element, Task, iced::Alignment, theme, widget};
+use cosmic::{Element, Task, iced::{Alignment, Length}, theme, widget};
 
 use crate::{
     app::{DiscardChangesAction, Message},
@@ -26,6 +26,8 @@ pub enum DialogPage {
     ConfirmCloseFile(DiscardChangesAction),
     /// Open file was modified externally
     ExternalFileModified(PathBuf),
+    /// Insert table with interactive matrix preview
+    InsertTable { rows: usize, cols: usize },
 }
 
 impl DialogPage {
@@ -220,6 +222,92 @@ impl DialogPage {
                         .spacing(spacing.space_xxs),
                     )
             }
+            DialogPage::InsertTable { rows, cols } => {
+                let current_rows = *rows;
+                let current_cols = *cols;
+
+                let max_grid_rows = 6;
+                let max_grid_cols = 6;
+
+                let mut grid_rows: Vec<Element<Message>> = Vec::with_capacity(max_grid_rows);
+
+                for r in 1..=max_grid_rows {
+                    let mut row_items: Vec<Element<Message>> = Vec::with_capacity(max_grid_cols);
+                    for c in 1..=max_grid_cols {
+                        let is_selected = r <= current_rows && c <= current_cols;
+                        let btn = if is_selected {
+                            widget::button::suggested("")
+                        } else {
+                            widget::button::standard("")
+                        };
+                        row_items.push(
+                            btn.width(Length::Fixed(32.0))
+                                .height(Length::Fixed(32.0))
+                                .on_press(Message::DialogAction(DialogAction::DialogUpdate(
+                                    DialogPage::InsertTable { rows: r, cols: c },
+                                )))
+                                .into(),
+                        );
+                    }
+                    grid_rows.push(
+                        widget::row::with_children(row_items)
+                            .spacing(4)
+                            .into(),
+                    );
+                }
+
+                let grid_column = widget::column::with_children(grid_rows).spacing(4);
+
+                let row_controls = widget::row![
+                    widget::text::body("Rows:"),
+                    widget::button::standard("-").on_press_maybe((current_rows > 1).then_some(
+                        Message::DialogAction(DialogAction::DialogUpdate(
+                            DialogPage::InsertTable { rows: current_rows - 1, cols: current_cols },
+                        ))
+                    )),
+                    widget::text::body(format!("{current_rows}")),
+                    widget::button::standard("+").on_press_maybe((current_rows < 50).then_some(
+                        Message::DialogAction(DialogAction::DialogUpdate(
+                            DialogPage::InsertTable { rows: current_rows + 1, cols: current_cols },
+                        ))
+                    )),
+                    widget::space::horizontal().width(Length::Fixed(16.0)),
+                    widget::text::body("Columns:"),
+                    widget::button::standard("-").on_press_maybe((current_cols > 1).then_some(
+                        Message::DialogAction(DialogAction::DialogUpdate(
+                            DialogPage::InsertTable { rows: current_rows, cols: current_cols - 1 },
+                        ))
+                    )),
+                    widget::text::body(format!("{current_cols}")),
+                    widget::button::standard("+").on_press_maybe((current_cols < 20).then_some(
+                        Message::DialogAction(DialogAction::DialogUpdate(
+                            DialogPage::InsertTable { rows: current_rows, cols: current_cols + 1 },
+                        ))
+                    )),
+                ]
+                .align_y(Alignment::Center)
+                .spacing(spacing.space_xxs);
+
+                widget::dialog()
+                    .title(fl!("insert-table"))
+                    .primary_action(
+                        widget::button::suggested(fl!("insert"))
+                            .on_press(Message::DialogAction(DialogAction::DialogComplete)),
+                    )
+                    .secondary_action(
+                        widget::button::standard(fl!("cancel"))
+                            .on_press(Message::DialogAction(DialogAction::DialogCancel)),
+                    )
+                    .control(
+                        widget::column::with_children(vec![
+                            widget::text::title3(format!("{current_rows} × {current_cols} Table")).into(),
+                            grid_column.into(),
+                            row_controls.into(),
+                        ])
+                        .spacing(spacing.space_xs)
+                        .align_x(Alignment::Center),
+                    )
+            }
         };
 
         Some(dialog.into())
@@ -243,6 +331,8 @@ pub enum DialogAction {
     OpenMoveNodeDialog(PathBuf),
     /// Asks to open the [`DialogPage`] for asking confirmation before closing a file
     OpenConfirmCloseFileDialog(DiscardChangesAction),
+    /// Asks to open the [`DialogPage`] for inserting a table
+    OpenInsertTableDialog,
     /// Action after user confirms wants to discard changes on Save dialog
     DiscardChanges(DiscardChangesAction),
     /// Action after user confirms/ok's/accepts the action of a Dialog
@@ -321,6 +411,14 @@ impl DialogAction {
                                 DiscardChangesAction::OpenFile(path.clone()),
                             )));
                         }
+                        DialogPage::InsertTable { rows, cols } => {
+                            return Task::done(cosmic::action::app(Message::ApplyFormatting(
+                                crate::app::core::utils::markdown::SelectionAction::InsertTable {
+                                    rows,
+                                    cols,
+                                },
+                            )));
+                        }
                     }
                 }
                 Task::none()
@@ -351,6 +449,10 @@ impl DialogAction {
             }
             DialogAction::OpenConfirmCloseFileDialog(action) => {
                 dialog_pages.push_back(DialogPage::ConfirmCloseFile(action));
+                Task::none()
+            }
+            DialogAction::OpenInsertTableDialog => {
+                dialog_pages.push_back(DialogPage::InsertTable { rows: 3, cols: 3 });
                 Task::none()
             }
         }

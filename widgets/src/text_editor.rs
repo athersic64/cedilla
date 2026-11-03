@@ -145,6 +145,7 @@ where
     highlighter_settings: Highlighter::Settings,
     highlighter_format: fn(&Highlighter::Highlight, &Theme) -> highlighter::Format<Renderer::Font>,
     last_status: Option<Status>,
+    show_line_numbers: bool,
 }
 
 impl<'a, Message, Theme, Renderer> TextEditor<'a, highlighter::PlainText, Message, Theme, Renderer>
@@ -176,6 +177,7 @@ where
             highlighter_settings: (),
             highlighter_format: |_highlight, _theme| highlighter::Format::default(),
             last_status: None,
+            show_line_numbers: false,
         }
     }
 
@@ -240,6 +242,29 @@ where
     pub fn is_code_block(mut self, value: bool) -> Self {
         self.is_code_block = value;
         self
+    }
+
+    /// Sets whether to show line numbers in a left gutter
+    pub fn show_line_numbers(mut self, value: bool) -> Self {
+        self.show_line_numbers = value;
+        self
+    }
+
+    fn gutter_width(&self, renderer: &Renderer) -> f32 {
+        if self.show_line_numbers {
+            let line_count = self.content.line_count();
+            let font_size = self.text_size.unwrap_or_else(|| renderer.default_size()).0;
+            let digits = line_count.max(1).to_string().len().max(2);
+            (digits as f32 * font_size * 0.65 + 24.0).ceil()
+        } else {
+            0.0
+        }
+    }
+
+    fn padding_with_gutter(&self, renderer: &Renderer) -> Padding {
+        let mut padding = self.padding;
+        padding.left += self.gutter_width(renderer);
+        padding
     }
 
     /// Sets the message that should be produced when some action is performed in
@@ -330,6 +355,7 @@ where
             highlighter_settings: settings,
             highlighter_format: to_format,
             last_status: self.last_status,
+            show_line_numbers: self.show_line_numbers,
         }
     }
 
@@ -378,7 +404,7 @@ where
         let bounds = layout.bounds();
         let internal = self.content.0.borrow_mut();
 
-        let text_bounds = bounds.shrink(self.padding);
+        let text_bounds = bounds.shrink(self.padding_with_gutter(renderer));
         let translation = text_bounds.position() - Point::ORIGIN;
 
         let cursor = match internal.editor.selection() {
@@ -800,8 +826,10 @@ where
             .min_height(self.min_height)
             .max_height(self.max_height);
 
+        let padding = self.padding_with_gutter(renderer);
+
         internal.editor.update(
-            limits.shrink(self.padding).max(),
+            limits.shrink(padding).max(),
             current_font,
             self.text_size.unwrap_or_else(|| renderer.default_size()),
             self.line_height,
@@ -820,7 +848,7 @@ where
                     limits
                         .height(min_bounds.height)
                         .max()
-                        .expand(Size::new(0.0, self.padding.y())),
+                        .expand(Size::new(0.0, padding.y())),
                 )
             }
         }
@@ -880,7 +908,7 @@ where
             event,
             state,
             layout.bounds(),
-            self.padding,
+            self.padding_with_gutter(renderer),
             cursor,
             self.key_binding.as_deref(),
             self.retain_focus_on_external_click,
@@ -1144,7 +1172,72 @@ where
             style.background,
         );
 
-        let text_bounds = bounds.shrink(self.padding);
+        let gutter_width = self.gutter_width(renderer);
+        if self.show_line_numbers && gutter_width > 0.0 {
+            let gutter_bounds = Rectangle::new(
+                bounds.position(),
+                Size::new(gutter_width, bounds.height),
+            );
+
+            let divider_bounds = Rectangle::new(
+                Point::new(bounds.x + gutter_width - 1.0, bounds.y),
+                Size::new(1.0, bounds.height),
+            );
+            let divider_color = if style.border.color.a > 0.0 {
+                style.border.color
+            } else {
+                cosmic::iced::Color::from_rgba(0.5, 0.5, 0.5, 0.2)
+            };
+            renderer.fill_quad(
+                renderer::Quad {
+                    bounds: divider_bounds,
+                    border: Border::default(),
+                    ..renderer::Quad::default()
+                },
+                divider_color,
+            );
+
+            let line_height_val = f32::from(
+                self.line_height
+                    .to_absolute(self.text_size.unwrap_or_else(|| renderer.default_size())),
+            );
+
+            if line_height_val > 0.0 {
+                let text_top = bounds.y + self.padding.top;
+                let visible_top = (viewport.y - text_top).max(0.0);
+                let visible_bottom = (viewport.y + viewport.height - text_top).max(0.0);
+
+                let first_line = (visible_top / line_height_val).floor() as usize;
+                let last_line = ((visible_bottom / line_height_val).ceil() as usize + 2).min(internal.editor.line_count());
+
+                for line_idx in first_line..last_line {
+                    let y_pos = text_top + (line_idx as f32 * line_height_val);
+                    if y_pos + line_height_val < viewport.y || y_pos > viewport.y + viewport.height {
+                        continue;
+                    }
+
+                    renderer.fill_text(
+                        Text {
+                            content: format!("{}", line_idx + 1),
+                            bounds: Size::new(gutter_width - 10.0, line_height_val),
+                            size: self.text_size.unwrap_or_else(|| renderer.default_size()),
+                            line_height: self.line_height,
+                            font,
+                            align_x: text::Alignment::Right,
+                            align_y: alignment::Vertical::Top,
+                            shaping: text::Shaping::Basic,
+                            wrapping: Wrapping::None,
+                            ellipsize: Ellipsize::default(),
+                        },
+                        Point::new(bounds.x, y_pos),
+                        style.placeholder,
+                        gutter_bounds,
+                    );
+                }
+            }
+        }
+
+        let text_bounds = bounds.shrink(self.padding_with_gutter(renderer));
 
         if internal.editor.is_empty() {
             if let Some(placeholder) = self.placeholder.clone() {
