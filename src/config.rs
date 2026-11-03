@@ -53,7 +53,7 @@ impl Default for CedillaConfig {
             show_helper_header_bar: ShowState::default(),
             show_status_bar: ShowState::default(),
             show_line_numbers: ShowState::default(),
-            autohide_sidebar: BoolState::No,
+            autohide_sidebar: BoolState::Yes,
             last_navbar_showstate: ShowState::default(),
             last_preview_showstate: ShowState::default(),
             open_last_file: BoolState::default(),

@@ -115,6 +115,10 @@ numbered-list = Numbered List
 checkbox = Task List
 horizontal-rule = Horizontal Rule
 pdf-export = Export to PDF
+show-editor = Show Editor (Ctrl+E)
+hide-editor = Hide Editor (Ctrl+E)
+show-preview = Show Preview (Ctrl+H)
+hide-preview = Hide Preview (Ctrl+H)
 
 <#-- Search -->
 search = Search

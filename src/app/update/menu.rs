@@ -74,7 +74,21 @@ impl AppModel {
                 self.handle_config_input(crate::config::ConfigInput::LineNumbersShowState(next))
             }
             MenuAction::ToggleSidebar => {
-                self.core.nav_bar_toggle();
+                if self.sidebar_auto_revealed {
+                    self.sidebar_auto_revealed = false;
+                    self.config.last_navbar_showstate = crate::config::ShowState::Show;
+                } else if self.core.nav_bar_active() {
+                    self.core.nav_bar_set_toggled(false);
+                    self.sidebar_auto_revealed = false;
+                    self.config.last_navbar_showstate = crate::config::ShowState::Hide;
+                } else {
+                    self.core.nav_bar_set_toggled(true);
+                    self.sidebar_auto_revealed = false;
+                    self.config.last_navbar_showstate = crate::config::ShowState::Show;
+                }
+                if let Some(handler) = &self.config_handler {
+                    let _ = self.config.set_last_navbar_showstate(handler, self.config.last_navbar_showstate);
+                }
                 Task::none()
             }
             MenuAction::ToggleAutohideSidebar => {

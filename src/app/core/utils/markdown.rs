@@ -74,9 +74,11 @@ impl AppModel {
             return Task::none();
         };
 
-        if matches!(self.config.autohide_sidebar, crate::config::BoolState::Yes)
+        if (matches!(self.config.autohide_sidebar, crate::config::BoolState::Yes)
+            || self.sidebar_auto_revealed)
             && self.core.nav_bar_active()
         {
+            self.sidebar_auto_revealed = false;
             self.core.nav_bar_set_toggled(false);
         }
 

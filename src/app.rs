@@ -86,6 +86,8 @@ pub struct AppModel {
     preview_generation: u64,
     /// Gotenberg client, needed for Pdf exporting
     gotenberg_client: gotenberg_pdf::Client,
+    /// Whether the sidebar was temporarily revealed via edge hover while collapsed
+    pub sidebar_auto_revealed: bool,
     /// Application State
     state: State,
 }
@@ -157,6 +159,10 @@ pub enum Message {
     NavBarContext(segmented_button::Entity),
     /// Fired when a menu item is chosen
     NavMenuAction(NavMenuAction),
+    /// Sidebar revealed via edge hover while collapsed
+    SidebarRevealHover,
+    /// Mouse left the revealed sidebar area
+    SidebarHideHover,
 
     /// Startup Message, checks config and set's the state as needed
     Startup(Option<PathBuf>),
@@ -338,6 +344,7 @@ impl cosmic::Application for AppModel {
             workspace_root: None,
             preview_generation: 0,
             gotenberg_client: gotenberg_pdf::Client::new(&gotenberg_url),
+            sidebar_auto_revealed: false,
             state: State::Loading,
         };
 
@@ -396,42 +403,33 @@ impl cosmic::Application for AppModel {
             return vec![];
         };
 
-        let editor_button = tooltip(
+        let editor_button = cosmic::widget::tooltip(
             widget::button::icon(icons::get_handle("edit-symbolic", 18))
                 .on_press(Message::MenuAction(MenuAction::ToggleEditor))
                 .class(theme::Button::Icon),
-            container(text(if *preview_state == PreviewState::PreviewOnly {
-                "Show Editor (Ctrl+E)"
+            text(if *preview_state == PreviewState::PreviewOnly {
+                fl!("show-editor")
             } else {
-                "Hide Editor (Ctrl+E)"
-            }))
-            .class(cosmic::theme::Container::Background)
-            .padding(8.),
-            tooltip::Position::Bottom,
-        )
-        .delay(std::time::Duration::from_millis(400));
+                fl!("hide-editor")
+            }),
+            cosmic::iced::widget::tooltip::Position::Bottom,
+        );
 
         let preview_button = match preview_state {
-            PreviewState::Hidden => tooltip(
+            PreviewState::Hidden => cosmic::widget::tooltip(
                 widget::button::icon(icons::get_handle("show-symbolic", 18))
                     .on_press(Message::MenuAction(MenuAction::TogglePreview))
                     .class(theme::Button::Icon),
-                container(text("Show Preview (Ctrl+H)"))
-                    .class(cosmic::theme::Container::Background)
-                    .padding(8.),
-                tooltip::Position::Bottom,
-            )
-            .delay(std::time::Duration::from_millis(400)),
-            _ => tooltip(
+                text(fl!("show-preview")),
+                cosmic::iced::widget::tooltip::Position::Bottom,
+            ),
+            _ => cosmic::widget::tooltip(
                 widget::button::icon(icons::get_handle("hide-symbolic", 18))
                     .on_press(Message::MenuAction(MenuAction::TogglePreview))
                     .class(theme::Button::Icon),
-                container(text("Hide Preview (Ctrl+H)"))
-                    .class(cosmic::theme::Container::Background)
-                    .padding(8.),
-                tooltip::Position::Bottom,
-            )
-            .delay(std::time::Duration::from_millis(400)),
+                text(fl!("hide-preview")),
+                cosmic::iced::widget::tooltip::Position::Bottom,
+            ),
         };
 
         vec![
@@ -592,7 +590,10 @@ impl cosmic::Application for AppModel {
                 Task::none()
             }
             ProjectNode::File { path, .. } => {
-                if matches!(self.config.autohide_sidebar, BoolState::Yes) {
+                if matches!(self.config.autohide_sidebar, BoolState::Yes)
+                    || self.sidebar_auto_revealed
+                {
+                    self.sidebar_auto_revealed = false;
                     self.core.nav_bar_set_toggled(false);
                 }
 
@@ -679,7 +680,7 @@ impl cosmic::Application for AppModel {
 
         // Add subscriptions which are always active.
         let subscriptions = vec![
-            // Watch for key_bind inputs
+            // Watch for key_bind and mouse hover inputs
             cosmic::iced::event::listen_with(|event, status, _| match event {
                 Event::Keyboard(cosmic::iced::keyboard::Event::KeyPressed {
                     key,
@@ -693,6 +694,18 @@ impl cosmic::Application for AppModel {
                     Some(Message::Modifiers(modifiers))
                 }
                 Event::Window(window::Event::CloseRequested) => Some(Message::AppCloseRequested),
+                Event::Mouse(cosmic::iced::mouse::Event::CursorMoved { position }) => {
+                    if position.x <= 25.0 {
+                        Some(Message::SidebarRevealHover)
+                    } else if position.x > 320.0 {
+                        Some(Message::SidebarHideHover)
+                    } else {
+                        None
+                    }
+                }
+                Event::Mouse(cosmic::iced::mouse::Event::CursorLeft) => {
+                    Some(Message::SidebarHideHover)
+                }
                 _ => None,
             }),
             cosmic_config::config_subscription(
@@ -757,6 +770,26 @@ impl cosmic::Application for AppModel {
             Message::DialogAction(action) => self.handle_dialog_action(action),
             Message::NavBarContext(entity) => self.handle_nav_bar_context(entity),
             Message::NavMenuAction(action) => self.handle_nav_menu_action(action),
+            Message::SidebarRevealHover => {
+                if !self.dialog_pages.is_empty() {
+                    return Task::none();
+                }
+                if matches!(self.config.autohide_sidebar, BoolState::Yes)
+                    && !self.sidebar_auto_revealed
+                    && !self.core.nav_bar_active()
+                {
+                    self.sidebar_auto_revealed = true;
+                    self.core.nav_bar_set_toggled(true);
+                }
+                Task::none()
+            }
+            Message::SidebarHideHover => {
+                if self.sidebar_auto_revealed {
+                    self.sidebar_auto_revealed = false;
+                    self.core.nav_bar_set_toggled(false);
+                }
+                Task::none()
+            }
 
             // File
             Message::Startup(open_with_file) => self.handle_startup(open_with_file),
@@ -1089,14 +1122,11 @@ fn button_tooltip<'a>(
     content: impl Into<Element<'a, Message>>,
     label: impl Into<String>,
 ) -> Element<'a, Message> {
-    tooltip(
-        content.into(),
-        container(text(label.into()))
-            .class(cosmic::theme::Container::Background)
-            .padding(6.),
-        tooltip::Position::Bottom,
+    cosmic::widget::tooltip(
+        content,
+        text(label.into()),
+        cosmic::iced::widget::tooltip::Position::Bottom,
     )
-    .delay(std::time::Duration::from_millis(400))
     .into()
 }
 
