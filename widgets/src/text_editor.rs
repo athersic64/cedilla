@@ -250,15 +250,18 @@ where
         self
     }
 
-    fn gutter_width(&self, renderer: &Renderer) -> f32 {
+    fn gutter_width_with_count(&self, renderer: &Renderer, line_count: usize) -> f32 {
         if self.show_line_numbers {
-            let line_count = self.content.line_count();
             let font_size = self.text_size.unwrap_or_else(|| renderer.default_size()).0;
             let digits = line_count.max(1).to_string().len().max(2);
             (digits as f32 * font_size * 0.65 + 24.0).ceil()
         } else {
             0.0
         }
+    }
+
+    fn gutter_width(&self, renderer: &Renderer) -> f32 {
+        self.gutter_width_with_count(renderer, self.content.line_count())
     }
 
     fn padding_with_gutter(&self, renderer: &Renderer) -> Padding {
@@ -403,8 +406,12 @@ where
 
         let bounds = layout.bounds();
         let internal = self.content.0.borrow_mut();
+        let line_count = internal.editor.line_count();
+        self.content.1.set(line_count);
 
-        let text_bounds = bounds.shrink(self.padding_with_gutter(renderer));
+        let mut padding = self.padding;
+        padding.left += self.gutter_width_with_count(renderer, line_count);
+        let text_bounds = bounds.shrink(padding);
         let translation = text_bounds.position() - Point::ORIGIN;
 
         let cursor = match internal.editor.selection() {
@@ -427,7 +434,7 @@ where
 }
 
 /// The content of a [`TextEditor`].
-pub struct Content<R = cosmic::Renderer>(RefCell<Internal<R>>)
+pub struct Content<R = cosmic::Renderer>(RefCell<Internal<R>>, std::cell::Cell<usize>)
 where
     R: text::Renderer;
 
@@ -451,11 +458,16 @@ where
 
     /// Creates a [`Content`] with the given text.
     pub fn with_text(text: &str) -> Self {
-        Self(RefCell::new(Internal {
-            editor: R::Editor::with_text(text),
-            is_dirty: true,
-            font: None,
-        }))
+        let editor = R::Editor::with_text(text);
+        let lines = editor.line_count();
+        Self(
+            RefCell::new(Internal {
+                editor,
+                is_dirty: true,
+                font: None,
+            }),
+            std::cell::Cell::new(lines),
+        )
     }
 
     /// Performs an [`Action`] on the [`Content`].
@@ -464,6 +476,7 @@ where
 
         internal.editor.perform(action);
         internal.is_dirty = true;
+        self.1.set(internal.editor.line_count());
     }
 
     /// Moves the current cursor to reflect the given one.
@@ -480,7 +493,13 @@ where
 
     /// Returns the amount of lines of the [`Content`].
     pub fn line_count(&self) -> usize {
-        self.0.borrow().editor.line_count()
+        if let Ok(internal) = self.0.try_borrow() {
+            let count = internal.editor.line_count();
+            self.1.set(count);
+            count
+        } else {
+            self.1.get()
+        }
     }
 
     /// Returns the vertical position (in pixels, from the top of the text) of the cursor.
@@ -577,6 +596,7 @@ where
             .editor
             .perform(Action::Edit(Edit::Paste(Arc::new(new_text.to_string()))));
         internal.is_dirty = true;
+        self.1.set(internal.editor.line_count());
     }
 }
 
@@ -794,6 +814,8 @@ where
         limits: &layout::Limits,
     ) -> cosmic::iced::core::layout::Node {
         let mut internal = self.content.0.borrow_mut();
+        let line_count = internal.editor.line_count();
+        self.content.1.set(line_count);
         let state = tree.state.downcast_mut::<State<Highlighter>>();
 
         let current_font = self.font.unwrap_or_else(|| renderer.default_font());
@@ -826,7 +848,8 @@ where
             .min_height(self.min_height)
             .max_height(self.max_height);
 
-        let padding = self.padding_with_gutter(renderer);
+        let mut padding = self.padding;
+        padding.left += self.gutter_width_with_count(renderer, line_count);
 
         internal.editor.update(
             limits.shrink(padding).max(),
@@ -1116,6 +1139,8 @@ where
         let bounds = layout.bounds();
 
         let mut internal = self.content.0.borrow_mut();
+        let line_count = internal.editor.line_count();
+        self.content.1.set(line_count);
         let state = tree.state.downcast_ref::<State<Highlighter>>();
 
         let font = self.font.unwrap_or_else(|| renderer.default_font());
@@ -1172,7 +1197,7 @@ where
             style.background,
         );
 
-        let gutter_width = self.gutter_width(renderer);
+        let gutter_width = self.gutter_width_with_count(renderer, line_count);
         if self.show_line_numbers && gutter_width > 0.0 {
             let gutter_bounds = Rectangle::new(
                 bounds.position(),
@@ -1237,7 +1262,9 @@ where
             }
         }
 
-        let text_bounds = bounds.shrink(self.padding_with_gutter(renderer));
+        let mut padding = self.padding;
+        padding.left += gutter_width;
+        let text_bounds = bounds.shrink(padding);
 
         if internal.editor.is_empty() {
             if let Some(placeholder) = self.placeholder.clone() {
