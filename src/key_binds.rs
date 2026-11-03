@@ -30,6 +30,7 @@ pub fn key_binds() -> HashMap<KeyBind, MenuAction> {
     bind!([Ctrl, Shift], Key::Character("t".into()), NewFile);
     bind!([Ctrl], Key::Character("s".into()), SaveFile);
     bind!([Ctrl], Key::Character("o".into()), OpenFile);
+    bind!([Ctrl, Shift], Key::Character("o".into()), OpenFolder);
 
     bind!([Ctrl], Key::Character("z".into()), Undo);
     bind!([Ctrl, Shift], Key::Character("z".into()), Redo);
@@ -40,6 +41,7 @@ pub fn key_binds() -> HashMap<KeyBind, MenuAction> {
     bind!([Ctrl], Key::Character("i".into()), About);
 
     bind!([Ctrl], Key::Character("h".into()), TogglePreview);
+    bind!([Ctrl], Key::Character("e".into()), ToggleEditor);
 
     bind!([], Key::Named(Escape), CloseCurrentDialog);
 

@@ -249,13 +249,17 @@ impl AppModel {
             Ok((path, content)) => {
                 let path = canonical(&path);
 
-                // store parent directory of selected file in nav_path only if path is inside vault
-                let vault_path = canonical(&self.config.vault_path());
-                if path.starts_with(&vault_path) {
-                    self.selected_nav_path = path.parent().map(|p| p.to_path_buf());
+                let workspace_root = canonical(&self.active_workspace_path());
+                if !path.starts_with(&workspace_root) {
+                    if let Some(parent) = path.parent() {
+                        self.workspace_root = Some(parent.to_path_buf());
+                        self.expanded_folders.insert(parent.to_path_buf());
+                    }
                 }
 
-                // expand the folders down to the file (no-op outside the vault)
+                self.selected_nav_path = path.parent().map(|p| p.to_path_buf());
+
+                // expand the folders down to the file
                 self.reveal_in_nav(&path);
 
                 let panes = get_previous_pane_state(self);
@@ -381,12 +385,23 @@ impl AppModel {
         }
 
         let currently_open = editor.path.as_ref() == Some(&path);
+        if !currently_open {
+            return Task::none();
+        }
+
+        // If no unsaved local changes exist, reload automatically in real time
+        if !editor.is_dirty {
+            return Task::perform(utils::files::load_file(path), |res| {
+                cosmic::action::app(Message::OpenFile(res))
+            });
+        }
+
         let already_shown = self
             .dialog_pages
             .iter()
             .any(|d| matches!(d, crate::app::dialogs::DialogPage::ExternalFileModified(_)));
 
-        if currently_open && !already_shown {
+        if !already_shown {
             editor.is_dirty = true; // we mark it as dirty so if the file has been removed and we keep the current version it creates it again
             self.dialog_pages
                 .push_back(crate::app::dialogs::DialogPage::ExternalFileModified(path));

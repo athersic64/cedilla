@@ -72,7 +72,7 @@ impl AppModel {
         if let Some(handler) = &self.config_handler {
             let current_preview_state = match preview_state {
                 PreviewState::Hidden => ShowState::Hide,
-                PreviewState::Shown => ShowState::Show,
+                PreviewState::Shown | PreviewState::PreviewOnly => ShowState::Show,
             };
 
             let current_nav_state = match self.core.nav_bar_active() {

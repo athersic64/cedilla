@@ -107,18 +107,13 @@ pub fn prepare_typst_math(input: &str) -> String {
 
     // Check for explicit typ/typst prefixes
     if let Some(rest) = s.strip_prefix("typ:") {
-        return rest.trim().to_string();
+        return split_unknown_identifiers(rest.trim());
     }
     if let Some(rest) = s.strip_prefix("typst:") {
-        return rest.trim().to_string();
+        return split_unknown_identifiers(rest.trim());
     }
 
-    // If it contains backslashes or typical LaTeX macros, translate it to Typst math syntax
-    if s.contains('\\') || s.contains("\\begin") || s.contains("\\frac") {
-        latex_to_typst(s)
-    } else {
-        s.to_string()
-    }
+    latex_to_typst(s)
 }
 
 /// Translates common LaTeX math constructs to Typst math.
@@ -301,7 +296,76 @@ pub fn latex_to_typst(latex: &str) -> String {
     // Convert subscript `{...}` after `_` or `^` into `(...)`
     out = convert_sub_superscripts(&out);
 
+    // Split consecutive letters (like `mc` -> `m c`) outside quotes and known Typst keywords
+    out = split_unknown_identifiers(&out);
+
     out
+}
+
+/// Splits unknown multi-letter identifiers (e.g. `mc` -> `m c`) outside quotes
+/// so Typst treats them as separate variables rather than an unknown symbol.
+pub fn split_unknown_identifiers(text: &str) -> String {
+    let mut result = String::with_capacity(text.len() + 16);
+    let mut chars = text.chars().peekable();
+    let mut in_quotes = false;
+
+    while let Some(c) = chars.next() {
+        if c == '"' {
+            in_quotes = !in_quotes;
+            result.push(c);
+            continue;
+        }
+
+        if in_quotes {
+            result.push(c);
+            continue;
+        }
+
+        if c.is_ascii_alphabetic() {
+            let mut word = String::new();
+            word.push(c);
+            while let Some(&next) = chars.peek() {
+                if next.is_ascii_alphabetic() || next == '.' {
+                    word.push(chars.next().unwrap());
+                } else {
+                    break;
+                }
+            }
+
+            if is_known_typst_symbol(&word) || word.len() == 1 {
+                result.push_str(&word);
+            } else {
+                // Split multi-letter identifier into separate spaced single letters
+                let mut first = true;
+                for ch in word.chars() {
+                    if !first {
+                        result.push(' ');
+                    }
+                    result.push(ch);
+                    first = false;
+                }
+            }
+            continue;
+        }
+
+        result.push(c);
+    }
+
+    result
+}
+
+fn is_known_typst_symbol(word: &str) -> bool {
+    const KNOWN: &[&str] = &[
+        "alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "kappa",
+        "lambda", "mu", "nu", "xi", "pi", "rho", "sigma", "tau", "upsilon", "phi", "chi", "psi", "omega",
+        "Gamma", "Delta", "Theta", "Lambda", "Xi", "Pi", "Sigma", "Upsilon", "Phi", "Psi", "Omega",
+        "sin", "cos", "tan", "cot", "sec", "csc", "arcsin", "arccos", "arctan", "sinh", "cosh", "tanh",
+        "ln", "log", "exp", "det", "dim", "ker", "lim", "sum", "product", "integral", "sqrt", "root",
+        "cases", "mat", "vec", "quad", "wide", "thin", "med", "space", "dot", "times", "approx", "diff",
+        "nabla", "infinity", "plus.minus", "minus.plus", "brace.l", "brace.r", "dif", "planck.reduce",
+        "plus", "minus", "alt", "brace", "typ", "typst"
+    ];
+    KNOWN.contains(&word)
 }
 
 /// Replaces a TeX command only when it appears as a distinct token (not a substring of a longer word).
@@ -399,6 +463,16 @@ mod tests {
         let input = r"\frac{a + 1}{b - 1} + \sqrt{x}";
         let out = latex_to_typst(input);
         assert_eq!(out, "(a + 1) / (b - 1) + sqrt(x)");
+    }
+
+    #[test]
+    fn test_split_unknown_identifiers() {
+        assert_eq!(split_unknown_identifiers("mc^2"), "m c^2");
+        assert_eq!(split_unknown_identifiers("E = mc^2"), "E = m c^2");
+        assert_eq!(split_unknown_identifiers("alpha"), "alpha");
+        assert_eq!(split_unknown_identifiers("typ: mc^2"), "typ: m c^2");
+        assert_eq!(prepare_typst_math("mc^2"), "m c^2");
+        assert_eq!(prepare_typst_math("typ: mc^2"), "m c^2");
     }
 }
 

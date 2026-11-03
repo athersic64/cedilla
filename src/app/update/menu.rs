@@ -28,6 +28,20 @@ impl AppModel {
                     None => cosmic::action::none(),
                 },
             ),
+            MenuAction::OpenFolder => {
+                let current = self.active_workspace_path().to_string_lossy().to_string();
+                Task::perform(
+                    async move {
+                        utils::files::open_folder_picker(current).await
+                    },
+                    |res| match res {
+                        Some(path) => {
+                            cosmic::action::app(Message::OpenWorkspaceFolder(std::path::PathBuf::from(path)))
+                        }
+                        None => cosmic::action::none(),
+                    },
+                )
+            }
             MenuAction::NewFile => self.handle_new_file(),
             MenuAction::NewVaultFile => {
                 self.handle_dialog_action(dialogs::DialogAction::OpenNewVaultFileDialog)
@@ -40,6 +54,15 @@ impl AppModel {
                 match preview_state {
                     PreviewState::Hidden => *preview_state = PreviewState::Shown,
                     PreviewState::Shown => *preview_state = PreviewState::Hidden,
+                    PreviewState::PreviewOnly => *preview_state = PreviewState::Shown,
+                }
+                Task::none()
+            }
+            MenuAction::ToggleEditor => {
+                match preview_state {
+                    PreviewState::PreviewOnly => *preview_state = PreviewState::Shown,
+                    PreviewState::Shown => *preview_state = PreviewState::PreviewOnly,
+                    PreviewState::Hidden => *preview_state = PreviewState::Shown,
                 }
                 Task::none()
             }

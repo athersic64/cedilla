@@ -24,29 +24,38 @@ impl AppModel {
     /// and the currently open file gets highlighted. Every operation that changes the tree
     /// updates the state and calls this, so the navbar can never drift from what's on disk.
     pub fn rebuild_nav(&mut self) {
-        let vault_path = canonical(&self.config.vault_path());
+        let root_path = canonical(&self.active_workspace_path());
 
         self.nav_model.clear();
 
-        let Ok(mut root) = ProjectNode::new(&vault_path) else {
+        let Ok(mut root) = ProjectNode::new(&root_path) else {
             return;
         };
 
-        let root_open = self.expanded_folders.contains(&vault_path);
+        let root_open = self.expanded_folders.contains(&root_path);
         if let ProjectNode::Folder { open, root, .. } = &mut root {
             *open = root_open;
             *root = true;
         }
 
+        let root_name = if self.workspace_root.is_some() {
+            root_path
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "Workspace".to_string())
+        } else {
+            "Cedilla Vault".to_string()
+        };
+
         self.nav_model
             .insert()
             .indent(0)
             .icon(root.icon(18))
-            .text("Cedilla Vault")
+            .text(root_name)
             .data(root);
 
         if root_open {
-            self.insert_folder_children(&vault_path, 1);
+            self.insert_folder_children(&root_path, 1);
         }
 
         self.sync_nav_selection();
@@ -101,16 +110,16 @@ impl AppModel {
     /// Expands every folder between the vault root and `path` so `path` is visible.
     /// Does nothing for paths outside the vault. Call `rebuild_nav` afterwards.
     pub fn reveal_in_nav(&mut self, path: &Path) {
-        let vault_path = canonical(&self.config.vault_path());
+        let root_path = canonical(&self.active_workspace_path());
         let path = canonical(path);
 
-        if !path.starts_with(&vault_path) {
+        if !path.starts_with(&root_path) {
             return;
         }
 
         for ancestor in path.ancestors().skip(1) {
             self.expanded_folders.insert(ancestor.to_path_buf());
-            if ancestor == vault_path {
+            if ancestor == root_path {
                 break;
             }
         }
@@ -143,7 +152,7 @@ impl AppModel {
     pub fn selected_directory(&self) -> PathBuf {
         self.selected_nav_path
             .clone()
-            .unwrap_or_else(|| self.config.vault_path())
+            .unwrap_or_else(|| self.active_workspace_path())
     }
 
     pub fn collect_all_folders(

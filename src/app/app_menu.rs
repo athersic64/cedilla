@@ -14,6 +14,8 @@ pub enum MenuAction {
     Settings,
     /// Open a FileDialog to pick a new file to open
     OpenFile,
+    /// Open a FileDialog to pick a workspace folder to open
+    OpenFolder,
     /// Create a new empty file
     NewFile,
     /// Create a new vault file
@@ -24,6 +26,8 @@ pub enum MenuAction {
     SaveFile,
     /// Toggle the preview for the current file
     TogglePreview,
+    /// Toggle the editor for the current file
+    ToggleEditor,
     /// Undo
     Undo,
     /// Redo
@@ -44,11 +48,13 @@ impl menu::action::MenuAction for MenuAction {
             MenuAction::About => Message::MenuAction(MenuAction::About),
             MenuAction::Settings => Message::MenuAction(MenuAction::Settings),
             MenuAction::OpenFile => Message::MenuAction(MenuAction::OpenFile),
+            MenuAction::OpenFolder => Message::MenuAction(MenuAction::OpenFolder),
             MenuAction::NewFile => Message::MenuAction(MenuAction::NewFile),
             MenuAction::NewVaultFile => Message::MenuAction(MenuAction::NewVaultFile),
             MenuAction::NewVaultFolder => Message::MenuAction(MenuAction::NewVaultFolder),
             MenuAction::SaveFile => Message::MenuAction(MenuAction::SaveFile),
             MenuAction::TogglePreview => Message::MenuAction(MenuAction::TogglePreview),
+            MenuAction::ToggleEditor => Message::MenuAction(MenuAction::ToggleEditor),
             MenuAction::Undo => Message::MenuAction(MenuAction::Undo),
             MenuAction::Redo => Message::MenuAction(MenuAction::Redo),
             MenuAction::PasteImage => Message::MenuAction(MenuAction::PasteImage),
@@ -68,6 +74,7 @@ pub fn menu_bar<'a>(key_binds: &HashMap<KeyBind, MenuAction>) -> Element<'a, Mes
                     menu::Item::Button(fl!("new-vault-file"), None, MenuAction::NewVaultFile),
                     menu::Item::Button(fl!("new-folder"), None, MenuAction::NewVaultFolder),
                     menu::Item::Button(fl!("open-file"), None, MenuAction::OpenFile),
+                    menu::Item::Button(fl!("open-folder"), None, MenuAction::OpenFolder),
                     menu::Item::Button(fl!("save-file"), None, MenuAction::SaveFile),
                     menu::Item::Divider,
                     menu::Item::Button(fl!("new-file"), None, MenuAction::NewFile),
@@ -91,6 +98,9 @@ pub fn menu_bar<'a>(key_binds: &HashMap<KeyBind, MenuAction>) -> Element<'a, Mes
             menu::items(
                 key_binds,
                 vec![
+                    menu::Item::Button(fl!("toggle-preview"), None, MenuAction::TogglePreview),
+                    menu::Item::Button(fl!("toggle-editor"), None, MenuAction::ToggleEditor),
+                    menu::Item::Divider,
                     menu::Item::Button(fl!("about"), None, MenuAction::About),
                     menu::Item::Button(fl!("settings"), None, MenuAction::Settings),
                 ],

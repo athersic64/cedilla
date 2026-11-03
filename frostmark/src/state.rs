@@ -295,6 +295,59 @@ fn normalize_math_delimiters(input: &str) -> String {
         result.push(c);
     }
 
+    trim_inline_dollar_spaces(&result)
+}
+
+/// Trims whitespace inside single dollar delimiters (e.g. `$ mc^2 $` -> `$mc^2$`)
+/// so CommonMark/Comrak parser recognizes inline math without breaking normal dollar signs.
+fn trim_inline_dollar_spaces(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let lines = input.lines();
+    let mut is_first = true;
+
+    for line in lines {
+        if !is_first {
+            result.push('\n');
+        }
+        is_first = false;
+
+        if line.trim_start().starts_with("```") || line.trim_start().starts_with("~~~") {
+            result.push_str(line);
+            continue;
+        }
+
+        let mut processed_line = String::with_capacity(line.len());
+        let mut chars = line.chars().peekable();
+
+        while let Some(c) = chars.next() {
+            if c == '$' && chars.peek() != Some(&'$') {
+                if chars.peek() == Some(&' ') || chars.peek() == Some(&'\t') {
+                    let rem: String = chars.clone().collect();
+                    if let Some(close_pos) = rem.find(" $") {
+                        let inner = &rem[..close_pos];
+                        if !inner.contains('$') && !inner.trim().is_empty() {
+                            processed_line.push('$');
+                            processed_line.push_str(inner.trim());
+                            processed_line.push('$');
+                            for _ in 0..close_pos + 2 {
+                                chars.next();
+                            }
+                            continue;
+                        }
+                    }
+                }
+            }
+            processed_line.push(c);
+        }
+
+        result.push_str(&processed_line);
+    }
+
+    if input.ends_with('\n') {
+        result.push('\n');
+    }
+
     result
 }
+
 

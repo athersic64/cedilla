@@ -80,6 +80,8 @@ pub struct AppModel {
     selected_nav_path: Option<PathBuf>,
     /// Folders expanded in the navbar (canonical paths, the vault root included)
     expanded_folders: HashSet<PathBuf>,
+    /// Currently opened workspace folder (defaults to vault_path if None)
+    pub workspace_root: Option<PathBuf>,
     /// Bumped on every debounced preview refresh request; only the latest one re-renders
     preview_generation: u64,
     /// Gotenberg client, needed for Pdf exporting
@@ -112,10 +114,11 @@ enum PaneContent {
 }
 
 /// State of the markdown preview in the app
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreviewState {
     Hidden,
     Shown,
+    PreviewOnly,
 }
 
 /// Possible actions after asking to discard changes in the warning [`DialogPage`]
@@ -173,6 +176,8 @@ pub enum Message {
     DiscardChanges(DiscardChangesAction),
     /// Fired when the watcher detects an external change to the open file
     ExternalFileChanged(PathBuf),
+    /// Open the selected folder as active workspace in the navbar
+    OpenWorkspaceFolder(PathBuf),
 
     /// Deletes the given vault folder or file
     DeleteNode(PathBuf),
@@ -330,6 +335,7 @@ impl cosmic::Application for AppModel {
                 .collect(),
             selected_nav_path: None,
             expanded_folders: HashSet::new(),
+            workspace_root: None,
             preview_generation: 0,
             gotenberg_client: gotenberg_pdf::Client::new(&gotenberg_url),
             state: State::Loading,
@@ -385,28 +391,45 @@ impl cosmic::Application for AppModel {
             return vec![];
         };
 
+        let editor_button = tooltip(
+            widget::button::icon(icons::get_handle("edit-symbolic", 18))
+                .on_press(Message::MenuAction(MenuAction::ToggleEditor))
+                .class(theme::Button::Icon),
+            container(text(if *preview_state == PreviewState::PreviewOnly {
+                "Show Editor (Ctrl+E)"
+            } else {
+                "Hide Editor (Ctrl+E)"
+            }))
+            .class(cosmic::theme::Container::Background)
+            .padding(8.),
+            tooltip::Position::Bottom,
+        );
+
         let preview_button = match preview_state {
             PreviewState::Hidden => tooltip(
                 widget::button::icon(icons::get_handle("show-symbolic", 18))
                     .on_press(Message::MenuAction(MenuAction::TogglePreview))
                     .class(theme::Button::Icon),
-                container(text("Ctrl+H"))
+                container(text("Show Preview (Ctrl+H)"))
                     .class(cosmic::theme::Container::Background)
                     .padding(8.),
                 tooltip::Position::Bottom,
             ),
-            PreviewState::Shown => tooltip(
+            _ => tooltip(
                 widget::button::icon(icons::get_handle("hide-symbolic", 18))
                     .on_press(Message::MenuAction(MenuAction::TogglePreview))
                     .class(theme::Button::Icon),
-                container(text("Ctrl+H"))
+                container(text("Hide Preview (Ctrl+H)"))
                     .class(cosmic::theme::Container::Background)
                     .padding(8.),
                 tooltip::Position::Bottom,
             ),
         };
 
-        vec![container(preview_button).into()]
+        vec![
+            container(editor_button).into(),
+            container(preview_button).into(),
+        ]
     }
 
     fn nav_bar(&self) -> Option<Element<'_, cosmic::action::Action<Message>>> {
@@ -733,6 +756,7 @@ impl cosmic::Application for AppModel {
             Message::FileSaved(result) => self.handle_file_saved(result),
             Message::DiscardChanges(action) => self.handle_discard_changes(action),
             Message::ExternalFileChanged(path) => self.handle_external_file_changed(path),
+            Message::OpenWorkspaceFolder(path) => self.handle_open_workspace_folder(path),
 
             // Vault / Node
             Message::DeleteNode(path) => self.handle_delete_node(path),
@@ -775,6 +799,25 @@ impl cosmic::Application for AppModel {
 }
 
 impl AppModel {
+    /// Returns the currently opened workspace path, or falls back to the configured vault path.
+    pub fn active_workspace_path(&self) -> PathBuf {
+        self.workspace_root
+            .clone()
+            .unwrap_or_else(|| self.config.vault_path())
+    }
+
+    /// Opens an arbitrary workspace directory in the sidebar navbar.
+    pub fn handle_open_workspace_folder(&mut self, path: PathBuf) -> Task<cosmic::Action<Message>> {
+        if path.is_dir() {
+            let canonical_path = crate::app::core::project::canonical(&path);
+            self.expanded_folders.insert(canonical_path.clone());
+            self.workspace_root = Some(canonical_path);
+            self.selected_nav_path = self.workspace_root.clone();
+            self.rebuild_nav();
+        }
+        Task::none()
+    }
+
     /// Updates the header and window titles.
     pub fn update_title(&mut self) -> Task<cosmic::Action<Message>> {
         let window_title = String::from("Cedilla");
@@ -1074,93 +1117,113 @@ fn cedilla_main_view<'a>(
         .align_y(Alignment::Center)
     };
 
-    let main_content: Element<'a, Message> = if matches!(preview_state, PreviewState::Hidden) {
-        // Editor only view
-        container(column![
-            container(create_title("edit-symbolic", fl!("editor")))
-                .padding(3.)
-                .width(Length::Fill)
-                .class(theme::Container::Card),
-            create_editor()
-        ])
+    let highlighter_theme: highlighter::Theme = match app_config.app_theme {
+        AppTheme::Dark => app_config.dark_highlighter_theme.into(),
+        AppTheme::Light => app_config.light_highlighter_theme.into(),
+        AppTheme::System => {
+            if theme::is_dark() {
+                app_config.dark_highlighter_theme.into()
+            } else {
+                app_config.light_highlighter_theme.into()
+            }
+        }
+    };
+
+    let create_preview = move || {
+        container(
+            scrollable(
+                MarkWidget::new(&preview.markstate)
+                    .on_updating_state(Message::UpdateMarkState)
+                    .on_clicking_link(Message::LaunchUrl)
+                    .on_copying_code(Message::CopyToClipboard)
+                    .on_toggling_checkbox(Message::ToggleCheckbox)
+                    .font(font)
+                    .text_size(app_config.text_size)
+                    .code_highlight_theme(highlighter_theme)
+                    .on_drawing_image(|info| {
+                        if let Some(image) = preview.images.get(info.url).cloned() {
+                            let mut img = widget::image(image);
+                            if let Some(w) = info.width {
+                                img = img.width(w);
+                            }
+                            if let Some(h) = info.height {
+                                img = img.height(h);
+                            }
+                            img.into()
+                        } else if let Some(svg_f) = preview.svgs.get(info.url).cloned() {
+                            let mut svg = widget::svg(svg_f);
+                            if let Some(w) = info.width {
+                                svg = svg.width(w);
+                            }
+                            if let Some(h) = info.height {
+                                svg = svg.height(h);
+                            }
+                            svg.into()
+                        } else {
+                            text(fl!("loading-image")).into()
+                        }
+                    }),
+            )
+            .id(preview_scrollable_id())
+            .on_scroll(|vp| Message::ScrollChanged(preview_scrollable_id(), vp))
+            .width(Length::Fill),
+        )
+        .padding(spacing.space_xxs)
         .width(Length::Fill)
         .height(Length::Fill)
-        .class(theme::Container::Card)
-        .into()
-    } else {
-        // Pane grid with editor and preview
-        pane_grid::PaneGrid::new(panes, |_pane, content, _is_focused| {
-            let (title, icon_name) = match content {
-                PaneContent::Editor => (fl!("editor"), "edit-symbolic"),
-                PaneContent::Preview => (fl!("preview"), "show-symbolic"),
-            };
+    };
 
-            let highlighter_theme: highlighter::Theme = match app_config.app_theme {
-                AppTheme::Dark => app_config.dark_highlighter_theme.into(),
-                AppTheme::Light => app_config.light_highlighter_theme.into(),
-                AppTheme::System => {
-                    if theme::is_dark() {
-                        app_config.dark_highlighter_theme.into()
-                    } else {
-                        app_config.light_highlighter_theme.into()
-                    }
-                }
-            };
+    let main_content: Element<'a, Message> = match preview_state {
+        PreviewState::Hidden => {
+            // Editor only view
+            container(column![
+                container(create_title("edit-symbolic", fl!("editor")))
+                    .padding(3.)
+                    .width(Length::Fill)
+                    .class(theme::Container::Card),
+                create_editor()
+            ])
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .class(theme::Container::Card)
+            .into()
+        }
+        PreviewState::PreviewOnly => {
+            // Preview only view (reading mode)
+            container(column![
+                container(create_title("show-symbolic", fl!("preview")))
+                    .padding(3.)
+                    .width(Length::Fill)
+                    .class(theme::Container::Card),
+                create_preview()
+            ])
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .class(theme::Container::Card)
+            .into()
+        }
+        PreviewState::Shown => {
+            // Pane grid with editor and preview
+            pane_grid::PaneGrid::new(panes, |_pane, content, _is_focused| {
+                let (title, icon_name) = match content {
+                    PaneContent::Editor => (fl!("editor"), "edit-symbolic"),
+                    PaneContent::Preview => (fl!("preview"), "show-symbolic"),
+                };
 
-            let pane_content: Element<'a, Message> = match content {
-                PaneContent::Editor => create_editor().into(),
-                PaneContent::Preview => container(
-                    scrollable(
-                        MarkWidget::new(&preview.markstate)
-                            .on_updating_state(Message::UpdateMarkState)
-                            .on_clicking_link(Message::LaunchUrl)
-                            .on_copying_code(Message::CopyToClipboard)
-                            .on_toggling_checkbox(Message::ToggleCheckbox)
-                            .font(font)
-                            .text_size(app_config.text_size)
-                            .code_highlight_theme(highlighter_theme)
-                            .on_drawing_image(|info| {
-                                if let Some(image) = preview.images.get(info.url).cloned() {
-                                    let mut img = widget::image(image);
-                                    if let Some(w) = info.width {
-                                        img = img.width(w);
-                                    }
-                                    if let Some(h) = info.height {
-                                        img = img.height(h);
-                                    }
-                                    img.into()
-                                } else if let Some(svg_f) = preview.svgs.get(info.url).cloned() {
-                                    let mut svg = widget::svg(svg_f);
-                                    if let Some(w) = info.width {
-                                        svg = svg.width(w);
-                                    }
-                                    if let Some(h) = info.height {
-                                        svg = svg.height(h);
-                                    }
-                                    svg.into()
-                                } else {
-                                    text(fl!("loading-image")).into()
-                                }
-                            }),
-                    )
-                    .id(preview_scrollable_id())
-                    .on_scroll(|vp| Message::ScrollChanged(preview_scrollable_id(), vp))
-                    .width(Length::Fill),
-                )
-                .padding(spacing.space_xxs)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into(),
-            };
+                let pane_content: Element<'a, Message> = match content {
+                    PaneContent::Editor => create_editor().into(),
+                    PaneContent::Preview => create_preview().into(),
+                };
 
-            pane_grid::Content::new(pane_content)
-                .title_bar(pane_grid::TitleBar::new(create_title(icon_name, title)).padding(3.))
-                .class(theme::Container::Card)
-        })
-        .on_drag(Message::PaneDragged)
-        .on_resize(10, Message::PaneResized)
-        .spacing(spacing.space_xxs)
-        .into()
+                pane_grid::Content::new(pane_content)
+                    .title_bar(pane_grid::TitleBar::new(create_title(icon_name, title)).padding(3.))
+                    .class(theme::Container::Card)
+            })
+            .on_drag(Message::PaneDragged)
+            .on_resize(10, Message::PaneResized)
+            .spacing(spacing.space_xxs)
+            .into()
+        }
     };
 
     let status_bar: Element<Message> = {
@@ -1364,13 +1427,16 @@ fn file_watch_subscription(path: Option<PathBuf>) -> Subscription<Message> {
                         }
                     };
 
-                if let Err(e) = watcher.watch(&path_owned, RecursiveMode::NonRecursive) {
-                    eprintln!("file_watcher: failed to watch {path_owned:?}: {e}");
+                let watch_target = path_owned.parent().unwrap_or(&path_owned);
+                if let Err(e) = watcher.watch(watch_target, RecursiveMode::NonRecursive) {
+                    eprintln!("file_watcher: failed to watch {watch_target:?}: {e}");
                     return;
                 }
 
                 // keep the watcher alive
                 let _watcher = watcher;
+
+                let canonical_target = std::fs::canonicalize(&path_owned).unwrap_or_else(|_| path_owned.clone());
 
                 loop {
                     let changed_path = match rx.recv().await {
@@ -1378,9 +1444,11 @@ fn file_watch_subscription(path: Option<PathBuf>) -> Subscription<Message> {
                         None => return, // channel closed, exit the stream
                     };
 
-                    if changed_path == path_owned {
+                    let canonical_changed = std::fs::canonicalize(&changed_path).unwrap_or_else(|_| changed_path.clone());
+
+                    if canonical_changed == canonical_target || changed_path == path_owned {
                         let _ = output
-                            .send(Message::ExternalFileChanged(changed_path.clone()))
+                            .send(Message::ExternalFileChanged(path_owned.clone()))
                             .await;
 
                         tokio::time::sleep(std::time::Duration::from_millis(300)).await;

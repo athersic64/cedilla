@@ -69,6 +69,7 @@ file = File
 new-vault-file = New Vault File
 new-folder = New Folder
 open-file = Open File
+open-folder = Open Folder
 save-file = Save File
 new-file = New File
 
@@ -80,6 +81,8 @@ no-image-clipboard = No image found in clipboard
 image-pasted = Image saved: { $name }
 
 view = View
+toggle-preview = Toggle Preview
+toggle-editor = Toggle Editor
 about = About
 settings = Settings
 
