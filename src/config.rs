@@ -21,6 +21,7 @@ pub struct CedillaConfig {
     pub show_helper_header_bar: ShowState,
     pub show_status_bar: ShowState,
     pub show_line_numbers: ShowState,
+    pub autohide_sidebar: BoolState,
     pub last_navbar_showstate: ShowState,
     pub last_preview_showstate: ShowState,
     pub open_last_file: BoolState,
@@ -52,6 +53,7 @@ impl Default for CedillaConfig {
             show_helper_header_bar: ShowState::default(),
             show_status_bar: ShowState::default(),
             show_line_numbers: ShowState::default(),
+            autohide_sidebar: BoolState::No,
             last_navbar_showstate: ShowState::default(),
             last_preview_showstate: ShowState::default(),
             open_last_file: BoolState::default(),
@@ -271,6 +273,8 @@ pub enum ConfigInput {
     StatusBarShowState(ShowState),
     /// Update the line numbers show state
     LineNumbersShowState(ShowState),
+    /// Update the autohide sidebar state
+    AutohideSidebar(BoolState),
     /// Update if the user wants to open last opened file or not
     OpenLastFile(BoolState),
     /// Update if the user wants the editor and preview scrollbars to be in sync

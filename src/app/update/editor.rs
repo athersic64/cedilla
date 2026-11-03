@@ -29,6 +29,12 @@ impl AppModel {
             return Task::none();
         };
 
+        if matches!(self.config.autohide_sidebar, crate::config::BoolState::Yes)
+            && self.core.nav_bar_active()
+        {
+            self.core.nav_bar_set_toggled(false);
+        }
+
         let was_edit = action.is_edit();
         // keyboard navigation (arrows, Home/End, PageUp/Down, with or without Shift)
         let moves_cursor = matches!(

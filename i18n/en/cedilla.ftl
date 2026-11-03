@@ -87,6 +87,8 @@ no-image-clipboard = No image found in clipboard
 image-pasted = Image saved: { $name }
 
 view = View
+toggle-sidebar = Toggle Sidebar
+autohide-sidebar = Auto-hide Sidebar
 toggle-preview = Toggle Preview
 toggle-editor = Toggle Editor
 toggle-line-numbers = Toggle Line Numbers
@@ -94,19 +96,32 @@ about = About
 settings = Settings
 
 <#-- Helper HeaderBar -->
+heading-1 = Heading 1 (#)
+heading-2 = Heading 2 (##)
+heading-3 = Heading 3 (###)
 bold = Bold
 italic = Italic
+strikethrough = Strikethrough (~~)
+quote = Blockquote (>)
+toggle-details = Collapsible Details (<details>)
+table = Insert Table
 link = Hyperlink
 code = Code
+math = Math Equation ($)
 image = Image
 attachment = Attachment
 bullet-list = Bulleted List
 numbered-list = Numbered List
-checkbox = Checkbox
+checkbox = Task List
 horizontal-rule = Horizontal Rule
+pdf-export = Export to PDF
 
 <#-- Search -->
 search = Search
+prev-match = Previous Match (Shift+Enter)
+next-match = Next Match (Enter)
+toggle-regex = Regular Expression
+close-search = Close Search (Esc)
 no-results = No Results
 
 <#-- Table Dialog -->

@@ -386,6 +386,7 @@ impl cosmic::Application for AppModel {
             &self.key_binds,
             &self.config.recent_files,
             &self.config.recent_workspaces,
+            matches!(self.config.autohide_sidebar, BoolState::Yes),
         )]
     }
 
@@ -407,7 +408,8 @@ impl cosmic::Application for AppModel {
             .class(cosmic::theme::Container::Background)
             .padding(8.),
             tooltip::Position::Bottom,
-        );
+        )
+        .delay(std::time::Duration::from_millis(400));
 
         let preview_button = match preview_state {
             PreviewState::Hidden => tooltip(
@@ -418,7 +420,8 @@ impl cosmic::Application for AppModel {
                     .class(cosmic::theme::Container::Background)
                     .padding(8.),
                 tooltip::Position::Bottom,
-            ),
+            )
+            .delay(std::time::Duration::from_millis(400)),
             _ => tooltip(
                 widget::button::icon(icons::get_handle("hide-symbolic", 18))
                     .on_press(Message::MenuAction(MenuAction::TogglePreview))
@@ -427,7 +430,8 @@ impl cosmic::Application for AppModel {
                     .class(cosmic::theme::Container::Background)
                     .padding(8.),
                 tooltip::Position::Bottom,
-            ),
+            )
+            .delay(std::time::Duration::from_millis(400)),
         };
 
         vec![
@@ -588,6 +592,10 @@ impl cosmic::Application for AppModel {
                 Task::none()
             }
             ProjectNode::File { path, .. } => {
+                if matches!(self.config.autohide_sidebar, BoolState::Yes) {
+                    self.core.nav_bar_set_toggled(false);
+                }
+
                 let State::Ready { editor, .. } = &self.state else {
                     return Task::none();
                 };
@@ -1056,6 +1064,17 @@ impl AppModel {
                         },
                     )),
                 )
+                .add(
+                    widget::settings::item::builder(fl!("autohide-sidebar")).control(widget::dropdown(
+                        BoolState::all_labels(),
+                        Some(self.config.autohide_sidebar.to_index()),
+                        |index| {
+                            Message::ConfigInput(ConfigInput::AutohideSidebar(
+                                BoolState::from_index(index),
+                            ))
+                        },
+                    )),
+                )
                 .into(),
         ])
         .into()
@@ -1065,6 +1084,21 @@ impl AppModel {
 //
 // VIEWS
 //
+
+fn button_tooltip<'a>(
+    content: impl Into<Element<'a, Message>>,
+    label: impl Into<String>,
+) -> Element<'a, Message> {
+    tooltip(
+        content.into(),
+        container(text(label.into()))
+            .class(cosmic::theme::Container::Background)
+            .padding(6.),
+        tooltip::Position::Bottom,
+    )
+    .delay(std::time::Duration::from_millis(400))
+    .into()
+}
 
 /// View of the header of this screen
 fn cedilla_main_view<'a>(
@@ -1287,51 +1321,105 @@ fn cedilla_main_view<'a>(
     let helper_header_bar = {
         container(
             row![
-                button::text("H1")
-                    .on_press(Message::ApplyFormatting(utils::SelectionAction::Heading1)),
-                button::text("H2")
-                    .on_press(Message::ApplyFormatting(utils::SelectionAction::Heading2)),
-                button::text("H3")
-                    .on_press(Message::ApplyFormatting(utils::SelectionAction::Heading3)),
-                horizontal().width(12.),
-                button::icon(icons::get_handle("helperbar/bold-symbolic", 18))
-                    .on_press(Message::ApplyFormatting(utils::SelectionAction::Bold)),
-                button::icon(icons::get_handle("helperbar/italic-symbolic", 18))
-                    .on_press(Message::ApplyFormatting(utils::SelectionAction::Italic)),
-                button::text("~S~")
-                    .on_press(Message::ApplyFormatting(utils::SelectionAction::Strikethrough)),
-                horizontal().width(12.),
-                button::icon(icons::get_handle("helperbar/link-symbolic", 18))
-                    .on_press(Message::ApplyFormatting(utils::SelectionAction::Hyperlink)),
-                button::icon(icons::get_handle("helperbar/code-symbolic", 18))
-                    .on_press(Message::ApplyFormatting(utils::SelectionAction::Code)),
-                button::icon(icons::get_handle("helperbar/math-symbolic", 18))
-                    .on_press(Message::ApplyFormatting(utils::SelectionAction::Math)),
-                button::icon(icons::get_handle("helperbar/image-symbolic", 18))
-                    .on_press(Message::ApplyFormatting(utils::SelectionAction::Image)),
-                button::text("“ ”")
-                    .on_press(Message::ApplyFormatting(utils::SelectionAction::Quote)),
-                button::text("▼ Details")
-                    .on_press(Message::ApplyFormatting(utils::SelectionAction::ToggleDetails)),
-                button::text("⊞ Table")
-                    .on_press(Message::DialogAction(dialogs::DialogAction::OpenInsertTableDialog)),
-                horizontal().width(12.),
-                button::icon(icons::get_handle("helperbar/bulleted-list-symbolic", 18)).on_press(
-                    Message::ApplyFormatting(utils::SelectionAction::BulletedList)
+                button_tooltip(
+                    button::text("H1")
+                        .on_press(Message::ApplyFormatting(utils::SelectionAction::Heading1)),
+                    fl!("heading-1"),
                 ),
-                button::icon(icons::get_handle("helperbar/numbered-list-symbolic", 18)).on_press(
-                    Message::ApplyFormatting(utils::SelectionAction::NumberedList)
+                button_tooltip(
+                    button::text("H2")
+                        .on_press(Message::ApplyFormatting(utils::SelectionAction::Heading2)),
+                    fl!("heading-2"),
                 ),
-                button::icon(icons::get_handle("helperbar/checked-list-symbolic", 18)).on_press(
-                    Message::ApplyFormatting(utils::SelectionAction::CheckboxList)
+                button_tooltip(
+                    button::text("H3")
+                        .on_press(Message::ApplyFormatting(utils::SelectionAction::Heading3)),
+                    fl!("heading-3"),
                 ),
-                button::icon(icons::get_handle("helperbar/rule-symbolic", 18))
-                    .on_press(Message::ApplyFormatting(utils::SelectionAction::Rule)),
+                horizontal().width(12.),
+                button_tooltip(
+                    button::icon(icons::get_handle("helperbar/bold-symbolic", 18))
+                        .on_press(Message::ApplyFormatting(utils::SelectionAction::Bold)),
+                    fl!("bold"),
+                ),
+                button_tooltip(
+                    button::icon(icons::get_handle("helperbar/italic-symbolic", 18))
+                        .on_press(Message::ApplyFormatting(utils::SelectionAction::Italic)),
+                    fl!("italic"),
+                ),
+                button_tooltip(
+                    button::text("~S~")
+                        .on_press(Message::ApplyFormatting(utils::SelectionAction::Strikethrough)),
+                    fl!("strikethrough"),
+                ),
+                horizontal().width(12.),
+                button_tooltip(
+                    button::icon(icons::get_handle("helperbar/link-symbolic", 18))
+                        .on_press(Message::ApplyFormatting(utils::SelectionAction::Hyperlink)),
+                    fl!("link"),
+                ),
+                button_tooltip(
+                    button::icon(icons::get_handle("helperbar/code-symbolic", 18))
+                        .on_press(Message::ApplyFormatting(utils::SelectionAction::Code)),
+                    fl!("code"),
+                ),
+                button_tooltip(
+                    button::icon(icons::get_handle("helperbar/math-symbolic", 18))
+                        .on_press(Message::ApplyFormatting(utils::SelectionAction::Math)),
+                    fl!("math"),
+                ),
+                button_tooltip(
+                    button::icon(icons::get_handle("helperbar/image-symbolic", 18))
+                        .on_press(Message::ApplyFormatting(utils::SelectionAction::Image)),
+                    fl!("image"),
+                ),
+                button_tooltip(
+                    button::text("“ ”")
+                        .on_press(Message::ApplyFormatting(utils::SelectionAction::Quote)),
+                    fl!("quote"),
+                ),
+                button_tooltip(
+                    button::text("▼ Details")
+                        .on_press(Message::ApplyFormatting(utils::SelectionAction::ToggleDetails)),
+                    fl!("toggle-details"),
+                ),
+                button_tooltip(
+                    button::text("⊞ Table")
+                        .on_press(Message::DialogAction(dialogs::DialogAction::OpenInsertTableDialog)),
+                    fl!("table"),
+                ),
+                horizontal().width(12.),
+                button_tooltip(
+                    button::icon(icons::get_handle("helperbar/bulleted-list-symbolic", 18)).on_press(
+                        Message::ApplyFormatting(utils::SelectionAction::BulletedList)
+                    ),
+                    fl!("bullet-list"),
+                ),
+                button_tooltip(
+                    button::icon(icons::get_handle("helperbar/numbered-list-symbolic", 18)).on_press(
+                        Message::ApplyFormatting(utils::SelectionAction::NumberedList)
+                    ),
+                    fl!("numbered-list"),
+                ),
+                button_tooltip(
+                    button::icon(icons::get_handle("helperbar/checked-list-symbolic", 18)).on_press(
+                        Message::ApplyFormatting(utils::SelectionAction::CheckboxList)
+                    ),
+                    fl!("checkbox"),
+                ),
+                button_tooltip(
+                    button::icon(icons::get_handle("helperbar/rule-symbolic", 18))
+                        .on_press(Message::ApplyFormatting(utils::SelectionAction::Rule)),
+                    fl!("horizontal-rule"),
+                ),
                 horizontal(),
-                button::icon(icons::get_handle("helperbar/pdf-symbolic", 18)).on_press_maybe(
-                    app_config
-                        .is_gotenberg_configured()
-                        .then_some(Message::ExportPDF)
+                button_tooltip(
+                    button::icon(icons::get_handle("helperbar/pdf-symbolic", 18)).on_press_maybe(
+                        app_config
+                            .is_gotenberg_configured()
+                            .then_some(Message::ExportPDF)
+                    ),
+                    fl!("pdf-export"),
                 )
             ]
             .padding(spacing.space_xxs)
@@ -1382,23 +1470,35 @@ fn cedilla_main_view<'a>(
                     .on_input(|v| Message::Search(SearchAction::UpdateSearchValue(v)))
                     .on_submit(|_v| Message::Search(SearchAction::NextResult))
                     .width(Length::Fixed(200.)),
-                button::icon(icons::get_handle("go-up-symbolic", 16))
-                    .on_press(Message::Search(SearchAction::PrevResult))
-                    .class(theme::Button::Icon),
-                button::icon(icons::get_handle("go-down-symbolic", 16))
-                    .on_press(Message::Search(SearchAction::NextResult))
-                    .class(theme::Button::Icon),
-                button::icon(icons::get_handle("regex-symbolic", 18))
-                    .on_press(Message::Search(SearchAction::ToggleRegex))
-                    .class(if editor.search.use_regex {
-                        theme::Button::Suggested
-                    } else {
-                        theme::Button::Standard
-                    }),
+                button_tooltip(
+                    button::icon(icons::get_handle("go-up-symbolic", 16))
+                        .on_press(Message::Search(SearchAction::PrevResult))
+                        .class(theme::Button::Icon),
+                    fl!("prev-match"),
+                ),
+                button_tooltip(
+                    button::icon(icons::get_handle("go-down-symbolic", 16))
+                        .on_press(Message::Search(SearchAction::NextResult))
+                        .class(theme::Button::Icon),
+                    fl!("next-match"),
+                ),
+                button_tooltip(
+                    button::icon(icons::get_handle("regex-symbolic", 18))
+                        .on_press(Message::Search(SearchAction::ToggleRegex))
+                        .class(if editor.search.use_regex {
+                            theme::Button::Suggested
+                        } else {
+                            theme::Button::Standard
+                        }),
+                    fl!("toggle-regex"),
+                ),
                 text(match_status).size(12),
-                button::icon(icons::get_handle("window-close-symbolic", 16))
-                    .on_press(Message::Search(SearchAction::ToggleSearch))
-                    .class(theme::Button::Icon),
+                button_tooltip(
+                    button::icon(icons::get_handle("window-close-symbolic", 16))
+                        .on_press(Message::Search(SearchAction::ToggleSearch))
+                        .class(theme::Button::Icon),
+                    fl!("close-search"),
+                ),
             ]
             .spacing(spacing.space_xxs)
             .align_y(Alignment::Center)

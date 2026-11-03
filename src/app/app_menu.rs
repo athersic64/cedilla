@@ -30,6 +30,10 @@ pub enum MenuAction {
     ToggleEditor,
     /// Toggle line numbers
     ToggleLineNumbers,
+    /// Toggle sidebar
+    ToggleSidebar,
+    /// Toggle autohide sidebar
+    ToggleAutohideSidebar,
     /// Undo
     Undo,
     /// Redo
@@ -66,6 +70,10 @@ impl menu::action::MenuAction for MenuAction {
             MenuAction::TogglePreview => Message::MenuAction(MenuAction::TogglePreview),
             MenuAction::ToggleEditor => Message::MenuAction(MenuAction::ToggleEditor),
             MenuAction::ToggleLineNumbers => Message::MenuAction(MenuAction::ToggleLineNumbers),
+            MenuAction::ToggleSidebar => Message::MenuAction(MenuAction::ToggleSidebar),
+            MenuAction::ToggleAutohideSidebar => {
+                Message::MenuAction(MenuAction::ToggleAutohideSidebar)
+            }
             MenuAction::Undo => Message::MenuAction(MenuAction::Undo),
             MenuAction::Redo => Message::MenuAction(MenuAction::Redo),
             MenuAction::PasteImage => Message::MenuAction(MenuAction::PasteImage),
@@ -87,6 +95,7 @@ pub fn menu_bar<'a>(
     key_binds: &HashMap<KeyBind, MenuAction>,
     recent_files: &[std::path::PathBuf],
     recent_workspaces: &[std::path::PathBuf],
+    autohide_sidebar: bool,
 ) -> Element<'a, Message> {
     let mut recent_file_items = Vec::new();
     for (i, path) in recent_files.iter().enumerate() {
@@ -169,6 +178,14 @@ pub fn menu_bar<'a>(
             menu::items(
                 key_binds,
                 vec![
+                    menu::Item::Button(fl!("toggle-sidebar"), None, MenuAction::ToggleSidebar),
+                    menu::Item::CheckBox(
+                        fl!("autohide-sidebar"),
+                        None,
+                        autohide_sidebar,
+                        MenuAction::ToggleAutohideSidebar,
+                    ),
+                    menu::Item::Divider,
                     menu::Item::Button(fl!("toggle-preview"), None, MenuAction::TogglePreview),
                     menu::Item::Button(fl!("toggle-editor"), None, MenuAction::ToggleEditor),
                     menu::Item::Button(fl!("toggle-line-numbers"), None, MenuAction::ToggleLineNumbers),

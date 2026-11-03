@@ -76,6 +76,16 @@ impl AppModel {
                 }
                 Ok(())
             }),
+            ConfigInput::AutohideSidebar(state) => self.apply_config(|config, handler| {
+                if let Some(h) = handler {
+                    config
+                        .set_autohide_sidebar(h, state)
+                        .map_err(|e| e.to_string())?;
+                } else {
+                    config.autohide_sidebar = state;
+                }
+                Ok(())
+            }),
             ConfigInput::OpenLastFile(state) => self.apply_config(|config, handler| {
                 if let Some(h) = handler {
                     config

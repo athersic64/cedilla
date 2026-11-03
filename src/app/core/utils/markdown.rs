@@ -74,6 +74,12 @@ impl AppModel {
             return Task::none();
         };
 
+        if matches!(self.config.autohide_sidebar, crate::config::BoolState::Yes)
+            && self.core.nav_bar_active()
+        {
+            self.core.nav_bar_set_toggled(false);
+        }
+
         let cursor_before = editor.content.cursor().position;
         let selection = editor.content.selection().unwrap_or_default();
 

@@ -73,6 +73,17 @@ impl AppModel {
                 };
                 self.handle_config_input(crate::config::ConfigInput::LineNumbersShowState(next))
             }
+            MenuAction::ToggleSidebar => {
+                self.core.nav_bar_toggle();
+                Task::none()
+            }
+            MenuAction::ToggleAutohideSidebar => {
+                let next = match self.config.autohide_sidebar {
+                    crate::config::BoolState::Yes => crate::config::BoolState::No,
+                    crate::config::BoolState::No => crate::config::BoolState::Yes,
+                };
+                self.handle_config_input(crate::config::ConfigInput::AutohideSidebar(next))
+            }
             MenuAction::Undo => self.handle_undo(),
             MenuAction::Redo => self.handle_redo(),
             MenuAction::PasteImage => self.handle_paste_image(),

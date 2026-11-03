@@ -40,8 +40,10 @@ pub fn key_binds() -> HashMap<KeyBind, MenuAction> {
     bind!([Ctrl], Key::Character(",".into()), Settings);
     bind!([Ctrl], Key::Character("i".into()), About);
 
+    bind!([Ctrl], Key::Character("b".into()), ToggleSidebar);
     bind!([Ctrl], Key::Character("h".into()), TogglePreview);
     bind!([Ctrl], Key::Character("e".into()), ToggleEditor);
+    bind!([Ctrl], Key::Character("l".into()), ToggleLineNumbers);
 
     bind!([], Key::Named(Escape), CloseCurrentDialog);
 
