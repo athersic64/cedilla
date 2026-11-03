@@ -102,6 +102,7 @@ impl<'a, M: Clone + 'static, T: ValidTheme + 'a> MarkWidget<'a, M, T> {
 }
 
 /// Converts a math string (LaTeX or Typst) to valid Typst equation content.
+/// Defaults to Typst syntax, but transparently translates LaTeX if LaTeX macros are detected.
 pub fn prepare_typst_math(input: &str) -> String {
     let s = input.trim();
 
@@ -113,7 +114,44 @@ pub fn prepare_typst_math(input: &str) -> String {
         return split_unknown_identifiers(rest.trim());
     }
 
-    latex_to_typst(s)
+    // Check for explicit latex/tex prefixes
+    if let Some(rest) = s.strip_prefix("latex:") {
+        return latex_to_typst(rest.trim());
+    }
+    if let Some(rest) = s.strip_prefix("tex:") {
+        return latex_to_typst(rest.trim());
+    }
+
+    // Default to Typst unless LaTeX macros are detected
+    if is_likely_latex(s) {
+        latex_to_typst(s)
+    } else {
+        split_unknown_identifiers(s)
+    }
+}
+
+/// Checks if a math string likely contains LaTeX commands (starts with `\` followed by a command or symbol).
+pub fn is_likely_latex(s: &str) -> bool {
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            if let Some(&next) = chars.peek() {
+                if next.is_ascii_alphabetic()
+                    || next == '{'
+                    || next == '}'
+                    || next == '\\'
+                    || next == '|'
+                    || next == ','
+                    || next == ';'
+                    || next == '!'
+                    || next == ' '
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// Translates common LaTeX math constructs to Typst math.
@@ -155,6 +193,50 @@ pub fn latex_to_typst(latex: &str) -> String {
         if let Some(end) = find_matching_brace(&out[start + 6..]) {
             let inner = &out[start + 6..start + 6 + end];
             let replacement = format!("sqrt({inner})");
+            out.replace_range(start..start + 6 + end + 1, &replacement);
+        } else {
+            break;
+        }
+    }
+
+    // Handle \left| ... \right| -> abs(...)
+    while let Some(start) = out.find("\\left|") {
+        if let Some(end) = out[start + 6..].find("\\right|") {
+            let inner = &out[start + 6..start + 6 + end];
+            let replacement = format!("abs({})", inner.trim());
+            out.replace_range(start..start + 6 + end + 7, &replacement);
+        } else {
+            break;
+        }
+    }
+
+    // Handle \left\| ... \right\| -> norm(...)
+    while let Some(start) = out.find("\\left\\|") {
+        if let Some(end) = out[start + 7..].find("\\right\\|") {
+            let inner = &out[start + 7..start + 7 + end];
+            let replacement = format!("norm({})", inner.trim());
+            out.replace_range(start..start + 7 + end + 8, &replacement);
+        } else {
+            break;
+        }
+    }
+
+    // Handle \abs{...} -> abs(...)
+    while let Some(start) = out.find("\\abs{") {
+        if let Some(end) = find_matching_brace(&out[start + 5..]) {
+            let inner = &out[start + 5..start + 5 + end];
+            let replacement = format!("abs({})", inner.trim());
+            out.replace_range(start..start + 5 + end + 1, &replacement);
+        } else {
+            break;
+        }
+    }
+
+    // Handle \norm{...} -> norm(...)
+    while let Some(start) = out.find("\\norm{") {
+        if let Some(end) = find_matching_brace(&out[start + 6..]) {
+            let inner = &out[start + 6..start + 6 + end];
+            let replacement = format!("norm({})", inner.trim());
             out.replace_range(start..start + 6 + end + 1, &replacement);
         } else {
             break;
@@ -287,6 +369,10 @@ pub fn latex_to_typst(latex: &str) -> String {
         ("\\right\\}", "}"),
         ("\\{", "brace.l"),
         ("\\}", "brace.r"),
+        ("\\vert", "|"),
+        ("\\mid", "mid"),
+        ("\\parallel", "||"),
+        ("\\|", "||"),
     ];
 
     for (tex, typ) in symbols {
@@ -360,10 +446,12 @@ fn is_known_typst_symbol(word: &str) -> bool {
         "lambda", "mu", "nu", "xi", "pi", "rho", "sigma", "tau", "upsilon", "phi", "chi", "psi", "omega",
         "Gamma", "Delta", "Theta", "Lambda", "Xi", "Pi", "Sigma", "Upsilon", "Phi", "Psi", "Omega",
         "sin", "cos", "tan", "cot", "sec", "csc", "arcsin", "arccos", "arctan", "sinh", "cosh", "tanh",
-        "ln", "log", "exp", "det", "dim", "ker", "lim", "sum", "product", "integral", "sqrt", "root",
-        "cases", "mat", "vec", "quad", "wide", "thin", "med", "space", "dot", "times", "approx", "diff",
+        "ln", "log", "exp", "det", "dim", "ker", "lim", "max", "min", "gcd", "lcm", "mod",
+        "sum", "product", "integral", "sqrt", "root",
+        "cases", "mat", "vec", "abs", "norm", "mid", "delim",
+        "quad", "wide", "thin", "med", "space", "dot", "times", "approx", "diff",
         "nabla", "infinity", "plus.minus", "minus.plus", "brace.l", "brace.r", "dif", "planck.reduce",
-        "plus", "minus", "alt", "brace", "typ", "typst"
+        "plus", "minus", "alt", "brace", "typ", "typst", "round", "floor", "ceil"
     ];
     KNOWN.contains(&word)
 }
@@ -473,6 +561,21 @@ mod tests {
         assert_eq!(split_unknown_identifiers("typ: mc^2"), "typ: m c^2");
         assert_eq!(prepare_typst_math("mc^2"), "m c^2");
         assert_eq!(prepare_typst_math("typ: mc^2"), "m c^2");
+    }
+
+    #[test]
+    fn test_pipes_and_typst_default() {
+        // Native Typst functions preserved without requiring typ: prefix
+        assert_eq!(prepare_typst_math("abs(x) < 5"), "abs(x) < 5");
+        assert_eq!(prepare_typst_math("norm(v) = 1"), "norm(v) = 1");
+        assert_eq!(prepare_typst_math("x mid y"), "x mid y");
+
+        // LaTeX absolute values and norms translated to Typst
+        assert_eq!(prepare_typst_math(r"\vert x \vert"), "| x |");
+        assert_eq!(prepare_typst_math(r"\left| x \right|"), "abs(x)");
+        assert_eq!(prepare_typst_math(r"\left\| v \right\|"), "norm(v)");
+        assert_eq!(prepare_typst_math(r"x \mid y"), "x mid y");
+        assert_eq!(prepare_typst_math(r"\parallel"), "||");
     }
 }
 

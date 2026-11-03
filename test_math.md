@@ -43,3 +43,26 @@ $typ: mc^2$
 
 $$typ: a/b$$
 
+## 7. Typst Block Equations with Single Dollar ($ ... $)
+$ A = pi r^2 $
+
+$
+sum_(i=1)^n i = (n(n+1)) / 2
+$
+
+## 8. Escaped Currency (\$): No Equation Trigger
+El café vale \$5 y el sándwich vale \$10.
+El producto tiene un descuento de \$2.50.
+
+## 9. Equations Starting with Numbers ($5-x$)
+Formula inline: $5-x$ y también $2x + 1 = 0$.
+
+## 10. Absolute Values, Norms and Pipes (|)
+Typst nativo: $abs(x) < 5$ y norma: $norm(v) = 1$.
+Relación Typst: $x mid y$.
+LaTeX absoluto: $\left| x \right| \le 1$.
+LaTeX norma: $\left\| v \right\|$.
+LaTeX barra relacional: $a \mid b$.
+Matriz con barras (determinante): $mat(delim: "|", 1, 2; 3, 4)$
+
+

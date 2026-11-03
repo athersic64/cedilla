@@ -240,114 +240,225 @@ fn find_image_links(node: &markup5ever_rcdom::Node, storage: &mut HashSet<String
     }
 }
 
-/// Normalizes LaTeX math delimiters `\[ ... \]` to `$$ ... $$` and `\( ... \)` to `$ ... $`
-/// while preserving raw code fences and inline backtick code blocks.
-fn normalize_math_delimiters(input: &str) -> String {
-    let mut result = String::with_capacity(input.len());
-    let mut in_code_fence = false;
-    let mut in_inline_code = false;
-    let mut chars = input.chars().peekable();
+/// Normalizes math delimiters for Comrak CommonMark parser:
+/// 1. LaTeX delimiters: `\[ ... \]` -> `$$ ... $$` and `\( ... \)` -> `$ ... $`
+/// 2. Preserves code fences (``` or ~~~) and inline code (`...`) verbatim.
+/// 3. Preserves escaped dollar signs (`\$`) verbatim so they render as literal `$`.
+/// 4. Typst math delimiters:
+///    - `$ ... $` with surrounding whitespace (space, tab, or newline) -> `$$ ... $$` (display block math)
+///    - `$x$`, `$5-x$` without whitespace -> `$x$` (inline math)
+///    - Asymmetric spaces are trimmed so Comrak recognizes the inline math.
+pub fn normalize_math_delimiters(input: &str) -> String {
+    let mut result = String::with_capacity(input.len() + 32);
+    let chars: Vec<char> = input.chars().collect();
+    let n = chars.len();
+    let mut i = 0;
 
-    while let Some(c) = chars.next() {
-        if c == '`' {
-            let mut count = 1;
-            while chars.peek() == Some(&'`') {
-                chars.next();
+    let mut in_code_fence: Option<(char, usize)> = None; // (fence_char, count)
+    let mut in_inline_code = false;
+
+    while i < n {
+        let c = chars[i];
+
+        // Check for code fences (``` or ~~~)
+        if (c == '`' || c == '~') && !in_inline_code {
+            let fence_char = c;
+            let mut count = 0;
+            while i + count < n && chars[i + count] == fence_char {
                 count += 1;
             }
+
             if count >= 3 {
-                in_code_fence = !in_code_fence;
-            } else if !in_code_fence {
-                in_inline_code = !in_inline_code;
+                if let Some((fc, fc_count)) = in_code_fence {
+                    if fc == fence_char && count >= fc_count {
+                        in_code_fence = None;
+                    }
+                } else {
+                    in_code_fence = Some((fence_char, count));
+                }
+                for _ in 0..count {
+                    result.push(fence_char);
+                }
+                i += count;
+                continue;
             }
-            for _ in 0..count {
-                result.push('`');
-            }
+        }
+
+        // Inside code fence, copy verbatim
+        if in_code_fence.is_some() {
+            result.push(c);
+            i += 1;
             continue;
         }
 
-        if !in_code_fence && !in_inline_code && c == '\\' {
-            match chars.peek() {
-                Some(&'[') => {
-                    chars.next();
-                    result.push_str("$$");
+        // Check for inline code `...`
+        if c == '`' {
+            in_inline_code = !in_inline_code;
+            result.push('`');
+            i += 1;
+            continue;
+        }
+
+        // Inside inline code, copy verbatim
+        if in_inline_code {
+            result.push(c);
+            i += 1;
+            continue;
+        }
+
+        // Escaped characters (\...)
+        if c == '\\' && i + 1 < n {
+            let next = chars[i + 1];
+            // Handle \[ and \] -> $$
+            if next == '[' || next == ']' {
+                result.push_str("$$");
+                i += 2;
+                continue;
+            }
+            // Handle \( and \) -> $
+            if next == '(' || next == ')' {
+                result.push('$');
+                i += 2;
+                continue;
+            }
+            // Handle \$ -> escaped dollar! Preserve verbatim so CommonMark outputs literal $
+            if next == '$' {
+                result.push('\\');
+                result.push('$');
+                i += 2;
+                continue;
+            }
+            // Other escaped character
+            result.push('\\');
+            result.push(next);
+            i += 2;
+            continue;
+        }
+
+        // Check for $$ (already display math)
+        if c == '$' && i + 1 < n && chars[i + 1] == '$' {
+            result.push_str("$$");
+            i += 2;
+            continue;
+        }
+
+        // Check for single $ delimiter (unescaped)
+        if c == '$' {
+            // Find matching closing unescaped $
+            let mut j = i + 1;
+            let mut found_close = None;
+            while j < n {
+                if chars[j] == '\\' && j + 1 < n {
+                    // skip escaped char
+                    j += 2;
                     continue;
                 }
-                Some(&']') => {
-                    chars.next();
-                    result.push_str("$$");
-                    continue;
+                if chars[j] == '`' {
+                    // Backtick inside potential math? Stop
+                    break;
                 }
-                Some(&'(') => {
-                    chars.next();
-                    result.push('$');
-                    continue;
+                if chars[j] == '$' {
+                    if j + 1 < n && chars[j + 1] == '$' {
+                        // Found $$ which is not a single $, skip
+                        j += 2;
+                        continue;
+                    }
+                    found_close = Some(j);
+                    break;
                 }
-                Some(&')') => {
-                    chars.next();
-                    result.push('$');
-                    continue;
+                j += 1;
+            }
+
+            if let Some(close_idx) = found_close {
+                let inner_chars = &chars[i + 1..close_idx];
+                if !inner_chars.is_empty() {
+                    let first = inner_chars[0];
+                    let last = inner_chars[inner_chars.len() - 1];
+                    let starts_ws = first.is_whitespace();
+                    let ends_ws = last.is_whitespace();
+
+                    if starts_ws && ends_ws {
+                        // Typst block equation syntax: $ <content> $
+                        // Normalize to display math $$ <content> $$
+                        result.push_str("$$");
+                        for &ch in inner_chars {
+                            result.push(ch);
+                        }
+                        result.push_str("$$");
+                        i = close_idx + 1;
+                        continue;
+                    } else if starts_ws || ends_ws {
+                        // Asymmetric whitespace: trim so Comrak can parse as inline math $content$
+                        let inner_str: String = inner_chars.iter().collect();
+                        let trimmed = inner_str.trim();
+                        result.push('$');
+                        result.push_str(trimmed);
+                        result.push('$');
+                        i = close_idx + 1;
+                        continue;
+                    } else {
+                        // Clean inline math: $content$
+                        result.push('$');
+                        for &ch in inner_chars {
+                            result.push(ch);
+                        }
+                        result.push('$');
+                        i = close_idx + 1;
+                        continue;
+                    }
                 }
-                _ => {}
             }
         }
 
         result.push(c);
-    }
-
-    trim_inline_dollar_spaces(&result)
-}
-
-/// Trims whitespace inside single dollar delimiters (e.g. `$ mc^2 $` -> `$mc^2$`)
-/// so CommonMark/Comrak parser recognizes inline math without breaking normal dollar signs.
-fn trim_inline_dollar_spaces(input: &str) -> String {
-    let mut result = String::with_capacity(input.len());
-    let lines = input.lines();
-    let mut is_first = true;
-
-    for line in lines {
-        if !is_first {
-            result.push('\n');
-        }
-        is_first = false;
-
-        if line.trim_start().starts_with("```") || line.trim_start().starts_with("~~~") {
-            result.push_str(line);
-            continue;
-        }
-
-        let mut processed_line = String::with_capacity(line.len());
-        let mut chars = line.chars().peekable();
-
-        while let Some(c) = chars.next() {
-            if c == '$' && chars.peek() != Some(&'$') {
-                if chars.peek() == Some(&' ') || chars.peek() == Some(&'\t') {
-                    let rem: String = chars.clone().collect();
-                    if let Some(close_pos) = rem.find(" $") {
-                        let inner = &rem[..close_pos];
-                        if !inner.contains('$') && !inner.trim().is_empty() {
-                            processed_line.push('$');
-                            processed_line.push_str(inner.trim());
-                            processed_line.push('$');
-                            for _ in 0..close_pos + 2 {
-                                chars.next();
-                            }
-                            continue;
-                        }
-                    }
-                }
-            }
-            processed_line.push(c);
-        }
-
-        result.push_str(&processed_line);
-    }
-
-    if input.ends_with('\n') {
-        result.push('\n');
+        i += 1;
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_escaped_dollars() {
+        let input = r"El café cuesta \$5 y el té cuesta \$10.";
+        let out = normalize_math_delimiters(input);
+        assert_eq!(out, r"El café cuesta \$5 y el té cuesta \$10.");
+    }
+
+    #[test]
+    fn test_normalize_typst_block_math() {
+        let input = "$ x + y = z $";
+        let out = normalize_math_delimiters(input);
+        assert_eq!(out, "$$ x + y = z $$");
+
+        let multiline = "$\n  E = mc^2\n$";
+        let out = normalize_math_delimiters(multiline);
+        assert_eq!(out, "$$\n  E = mc^2\n$$");
+    }
+
+    #[test]
+    fn test_normalize_inline_math() {
+        let input = "Formula $E=mc^2$ and $5-x$ here.";
+        let out = normalize_math_delimiters(input);
+        assert_eq!(out, "Formula $E=mc^2$ and $5-x$ here.");
+    }
+
+    #[test]
+    fn test_normalize_latex_delimiters() {
+        let input = r"Inline \( x + 1 \) and display \[ \int_0^1 x dx \]";
+        let out = normalize_math_delimiters(input);
+        assert_eq!(out, r"Inline $ x + 1 $ and display $$ \int_0^1 x dx $$");
+    }
+
+    #[test]
+    fn test_normalize_code_fences_preserved() {
+        let input = "```rust\nlet x = \"$ 5 $\";\n```";
+        let out = normalize_math_delimiters(input);
+        assert_eq!(out, input);
+    }
 }
 
 
