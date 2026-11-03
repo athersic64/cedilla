@@ -20,7 +20,8 @@ use super::structs::ChildData;
 mod ruby;
 mod table;
 pub(crate) mod typst;
-pub (crate) mod mermaid;
+pub(crate) mod mermaid;
+pub(crate) mod math;
 
 const COPY_ICON_BYTES: &[u8] = include_bytes!("../../resources/icons/bundled/edit-copy-symbolic.svg");
 
@@ -153,19 +154,36 @@ impl<'a, M: Clone + 'static, T: ValidTheme + 'a> MarkWidget<'a, M, T> {
         }
 
         let e = match name.as_str() {
-            "summary" | "kbd" | "span" | "html" | "body" | "div" | "thead" | "tbody" | "tfoot" => {
+            "summary" | "kbd" | "html" | "body" | "div" | "thead" | "tbody" | "tfoot" => {
                 self.render_children(node, data)
+            }
+            "span" => {
+                if let Some(style) = get_attr(&attrs, "data-math-style") {
+                    let is_display = style == "display";
+                    let math_text = extract_text(node);
+                    self.draw_math(&math_text, is_display, data)
+                } else {
+                    self.render_children(node, data)
+                }
             }
             "center" => {
                 data.alignment = Some(ChildAlignment::Center);
                 self.render_children(node, data)
             }
-            "pre" => widget::column![
-                self.render_children(node, data.insert(ChildDataFlags::KEEP_WHITESPACE))
-                    .render()
-            ]
-            .padding(Padding::default().top(8.0).bottom(8.0))
-            .into(),
+            "pre" => {
+                if let Some(style) = get_attr(&attrs, "data-math-style") {
+                    let is_display = style == "display";
+                    let math_text = extract_text(node);
+                    self.draw_math(&math_text, is_display, data)
+                } else {
+                    widget::column![
+                        self.render_children(node, data.insert(ChildDataFlags::KEEP_WHITESPACE))
+                            .render()
+                    ]
+                    .padding(Padding::default().top(8.0).bottom(8.0))
+                    .into()
+                }
+            }
 
             "p" => widget::column![self.render_children(node, data).render()]
                 .padding(Padding::default().top(4.0).bottom(4.0))
@@ -205,6 +223,7 @@ impl<'a, M: Clone + 'static, T: ValidTheme + 'a> MarkWidget<'a, M, T> {
 
                 let result = match self.current_code_language.as_deref() {
                     Some("typ" | "typst") => self.draw_typst(&extract_text(node)),
+                    Some("math" | "latex" | "tex") => self.draw_math(&extract_text(node), true, data),
                     Some("mermaid" | "mmd") => self.draw_mermaid(&extract_text(node)),
                     _ => self.render_children(node, data.insert(ChildDataFlags::MONOSPACE)),
                 };
@@ -671,9 +690,12 @@ fn is_node_useless(node: &Node) -> bool {
 }
 
 fn is_block_element(node: &Node) -> bool {
-    let markup5ever_rcdom::NodeData::Element { name, .. } = &node.data else {
+    let markup5ever_rcdom::NodeData::Element { name, attrs, .. } = &node.data else {
         return false;
     };
+    if get_attr(&attrs.borrow(), "data-math-style") == Some("display") {
+        return true;
+    }
     let n: &str = &name.local;
 
     matches!(

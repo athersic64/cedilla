@@ -83,8 +83,9 @@ impl MarkState {
     #[must_use]
     #[cfg(feature = "markdown")]
     pub fn with_html_and_markdown(input: &str) -> Self {
+        let normalized = normalize_math_delimiters(input);
         let html = comrak::markdown_to_html(
-            input,
+            &normalized,
             &comrak::Options {
                 extension: comrak::options::Extension {
                     strikethrough: true,
@@ -94,6 +95,8 @@ impl MarkState {
                     subscript: true,
                     underline: true,
                     table: true,
+                    math_dollars: true,
+                    math_code: true,
                     ..Default::default()
                 },
                 parse: comrak::options::Parse::default(),
@@ -236,3 +239,62 @@ fn find_image_links(node: &markup5ever_rcdom::Node, storage: &mut HashSet<String
         }
     }
 }
+
+/// Normalizes LaTeX math delimiters `\[ ... \]` to `$$ ... $$` and `\( ... \)` to `$ ... $`
+/// while preserving raw code fences and inline backtick code blocks.
+fn normalize_math_delimiters(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut in_code_fence = false;
+    let mut in_inline_code = false;
+    let mut chars = input.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '`' {
+            let mut count = 1;
+            while chars.peek() == Some(&'`') {
+                chars.next();
+                count += 1;
+            }
+            if count >= 3 {
+                in_code_fence = !in_code_fence;
+            } else if !in_code_fence {
+                in_inline_code = !in_inline_code;
+            }
+            for _ in 0..count {
+                result.push('`');
+            }
+            continue;
+        }
+
+        if !in_code_fence && !in_inline_code && c == '\\' {
+            match chars.peek() {
+                Some(&'[') => {
+                    chars.next();
+                    result.push_str("$$");
+                    continue;
+                }
+                Some(&']') => {
+                    chars.next();
+                    result.push_str("$$");
+                    continue;
+                }
+                Some(&'(') => {
+                    chars.next();
+                    result.push('$');
+                    continue;
+                }
+                Some(&')') => {
+                    chars.next();
+                    result.push('$');
+                    continue;
+                }
+                _ => {}
+            }
+        }
+
+        result.push(c);
+    }
+
+    result
+}
+
